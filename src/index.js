@@ -2,6 +2,8 @@ import express from "express";
 import dbConfig from "./configurations/dbConfig.js";
 import "dotenv/config.js";
 import cors from "cors";
+
+import { swaggerDocs, swaggerUi } from "./configurations/swaggerConfig.js";
 import { corsOptions } from "./static/constant.js";
 import { createServer } from "http";
 
@@ -13,6 +15,8 @@ const httpServer = createServer(app);
 
 app.use(cors(corsOptions));
 app.use(express.json({ limit: "200mb" }));
+
+app.use("/api-docs", swaggerUi.serve, swaggerUi.setup(swaggerDocs));
 
 // app.use(express.static(path.join(__dirname, "../public")));
 // app.get("/", (req, res) => {
