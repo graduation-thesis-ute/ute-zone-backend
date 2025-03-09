@@ -6,19 +6,19 @@ const swaggerOptions = {
   swaggerDefinition: {
     openapi: "3.0.0",
     info: {
-      title: "UTEZONE API Documentation",
+      title: "Realtime Chat App API",
       version: "1.0.0",
-      description: "API documentation for the UTEZONE Application",
+      description: "API documentation for the Realtime Chat Application",
       contact: {
         name: "API Support",
-        email: "vohuutai2369@gmail.com",
+        email: "support@realtimechatapp.com",
       },
     },
     servers: [
-      //   {
-      //     // url: `realtime-chat-app-api-tbaf.onrender.com`,
-      //     description: "Remote server",
-      //   },
+      {
+        url: `realtime-chat-app-api-tbaf.onrender.com`,
+        description: "Remote server",
+      },
       {
         url: `http://localhost:${process.env.PORT}`,
         description: "Local server",
