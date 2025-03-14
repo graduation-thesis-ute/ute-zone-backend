@@ -2,8 +2,7 @@ import "dotenv/config.js";
 
 const PhonePattern = /^0[35789][0-9]{8}$/;
 
-const EmailPattern =
-  /^(?!.*[.]{2,})[a-zA-Z0-9.%]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
+const EmailPattern = /^[0-9]{8}@(student\.hcmute\.edu\.vn|hcmute\.edu\.vn)$/;
 
 const StudentIdPattern = /^[1-9][0-9]{7}$/;
 

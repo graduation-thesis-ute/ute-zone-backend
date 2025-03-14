@@ -1,4 +1,5 @@
 import express from "express";
+import passport from "passport";
 import {
   loginUser,
   getUserProfile,
@@ -16,11 +17,23 @@ import {
   getUsers,
   requestChangeUserKeyInformation,
   verifyChangeUserKeyInformation,
+  googleLoginUser,
 } from "../controllers/userController.js";
 import auth from "../middlewares/authentication.js";
+
 const router = express.Router();
 
 router.post("/login", loginUser);
+// Google OAuth
+router.get(
+  "/auth/google",
+  passport.authenticate("google", { scope: ["profile", "email"] })
+);
+router.get(
+  "/auth/google/callback",
+  passport.authenticate("google", { failureRedirect: "/login" }),
+  googleLoginUser
+);
 router.post("/verify-token", verifyToken);
 router.get("/profile", auth(""), getUserProfile);
 router.post("/register", registerUser);
