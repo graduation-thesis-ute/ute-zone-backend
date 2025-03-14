@@ -22,6 +22,7 @@ import {
   PhonePattern,
   StudentIdPattern,
 } from "../static/constant.js";
+import "dotenv/config.js";
 
 const loginUser = async (req, res) => {
   try {
@@ -47,6 +48,41 @@ const loginUser = async (req, res) => {
       message: "Login success",
       data: { accessToken },
     });
+  } catch (error) {
+    return makeErrorResponse({ res, message: error.message });
+  }
+};
+
+const googleLoginUser = async (req, res) => {
+  console.log("done");
+  const { googleId, email, name, avatar } = req.user;
+  console.log(googleId, name, email, avatar);
+  if (!email || !EmailPattern.test(email)) {
+    return makeErrorResponse({ res, message: "Email không hợp lệ" });
+  }
+  try {
+    const existingUser = await User.findOne({ email });
+    if (!existingUser) {
+      const user = await User.create({
+        googleId,
+        displayName: name,
+        email,
+        avatarUrl: avatar,
+        status: 1,
+        role: await Role.findOne({ kind: 1 }),
+      });
+      const accessToken = createToken(user._id);
+      return res.redirect(`${process.env.FE_URL}?token=${accessToken}`);
+    } else {
+      if (!existingUser.googleId) {
+        const user = await existingUser.updateOne({ googleId });
+        const accessToken = createToken(user._id);
+        return res.redirect(`${process.env.FE_URL}?token=${accessToken}`);
+      }
+      const accessToken = createToken(existingUser._id);
+      console.log("Login GG acc: ", accessToken);
+      return res.redirect(`${process.env.FE_URL}?token=${accessToken}`);
+    }
   } catch (error) {
     return makeErrorResponse({ res, message: error.message });
   }
@@ -622,6 +658,7 @@ const loginAdmin = async (req, res) => {
 
 export {
   loginUser,
+  googleLoginUser,
   getUserProfile,
   forgotUserPassword,
   resetUserPassword,

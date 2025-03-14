@@ -1,4 +1,5 @@
 import express from "express";
+import session from "express-session";
 import dbConfig from "./configurations/dbConfig.js";
 import "dotenv/config.js";
 import cors from "cors";
@@ -28,6 +29,8 @@ import { fileURLToPath } from "url";
 import { setupSocketHandlers } from "./utils/utils.js";
 import { statisticRouter } from "./routes/StatisticRouter.js";
 import { settingRouter } from "./routes/settingRouter.js";
+import "./configurations/googleConfig.js";
+import passport from "passport";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -37,6 +40,18 @@ const io = new Server(httpServer);
 
 app.use(cors(corsOptions));
 app.use(express.json({ limit: "200mb" }));
+
+app.use(
+  session({
+    secret: process.env.SESSION_SECRET,
+    resave: false,
+    saveUninitialized: false,
+    cookie: { secure: false },
+  })
+);
+
+app.use(passport.initialize());
+app.use(passport.session());
 
 app.use("/api-docs", swaggerUi.serve, swaggerUi.setup(swaggerDocs));
 app.use("/v1/user", userRouter);
