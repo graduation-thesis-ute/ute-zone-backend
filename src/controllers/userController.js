@@ -115,12 +115,13 @@ const registerUser = async (req, res) => {
         field: "email",
         message: "email cannot be null",
       });
-    } else if (!EmailPattern.test(email)) {
-      errors.push({
-        field: "email",
-        message: "email is invalid",
-      });
     }
+    // } else if (!EmailPattern.test(email)) {
+    //   errors.push({
+    //     field: "email",
+    //     message: "email is invalid",
+    //   });
+    // }
     if (!password) {
       errors.push({
         field: "password",
