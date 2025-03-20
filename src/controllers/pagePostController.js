@@ -1,6 +1,8 @@
 import Friendship from "../models/friendshipModel.js";
 import Notification from "../models/notificationModel.js";
 import PagePost from "../models/pagePostModel.js";
+import PageMember from "../models/pageMemberModel.js";
+import Page from "../models/pageModel.js";
 import {
   deleteFileByUrl,
   isValidUrl,
@@ -15,6 +17,10 @@ const createPost = async (req, res) => {
     const { content, imageUrls, kind, pageId } = req.body;
     const errors = [];
 
+    const pageMember = await PageMember.findOne({ page: pageId, user: req.user._id });
+    if (!pageMember || ![1, 2].includes(pageMember.role)) {
+      return makeErrorResponse({ res, message: "You do not have permission to create a post on this page" });
+    }
     // Validate incoming data
     if (!kind || ![1, 2, 3].includes(kind)) {
       errors.push({ field: "kind", message: "Invalid post kind" });
@@ -70,15 +76,48 @@ const createPost = async (req, res) => {
     return makeErrorResponse({ res, message: error.message });
   }
 };
+const getPost = async (req, res) => {
+  try {
+    const id  = req.params.id;
+    const currentUser = req.user;
+  
+    const post = await PagePost.findById(id).populate("user");
 
+    if (!post) {
+      return makeErrorResponse({ res, message: "Post not found" });
+    }
+    const pageMember = await PageMember.findOne({ page: post.page, user: req.user._id });
+    if (!pageMember || ![1, 2].includes(pageMember.role)) {
+      return makeErrorResponse({ res, message: "You do not have permission to view this post on this page" });
+    }
+    const formattedPost = await formatPagePostData(post, currentUser);
+    return makeSuccessResponse({ 
+      res, 
+      data: formattedPost });
+  } catch (error) {
+    return makeErrorResponse({ res, message: error.message });
+  }
+};
 // Controller for fetching page posts
 const getPosts = async (req, res) => {
   try {
-    const { pageId } = req.params;
-    const { page, size } = req.query;
+    const id  = req.params.id;
+    const currentUser = req.user;
+  
+    const page = await Page.findById(id);
 
+    if (!page) {
+      return makeErrorResponse({ res, message: "Page not found" });
+    }
+    const pageMember = await PageMember.findOne({ page: id, user: req.user._id });
+    if (!pageMember || ![1, 2].includes(pageMember.role)) {
+      return makeErrorResponse({ res, message: "You do not have permission to view list post on this page" });
+    }
     const result = await getListPagePosts(req);
-    return makeSuccessResponse({ res, data: result });
+    return makeSuccessResponse({ 
+      res, 
+      data: result,
+    });
   } catch (error) {
     return makeErrorResponse({ res, message: error.message });
   }
@@ -93,7 +132,10 @@ const updatePost = async (req, res) => {
     if (!post) {
       return makeErrorResponse({ res, message: "Post not found" });
     }
-
+    const pageMember = await PageMember.findOne({ page: post.page, user: req.user._id });
+    if (!pageMember || ![1, 2].includes(pageMember.role)) {
+      return makeErrorResponse({ res, message: "You do not have permission to update this post on this page" });
+    }
     // Handle image deletion
     const oldImageUrls = post.imageUrls || [];
     const imagesToDelete = oldImageUrls.filter(
@@ -130,7 +172,10 @@ const deletePost = async (req, res) => {
     if (!post) {
       return makeErrorResponse({ res, message: "Post not found" });
     }
-
+    const pageMember = await PageMember.findOne({ page: post.page, user: req.user._id });
+    if (!pageMember || ![1, 2].includes(pageMember.role)) {
+      return makeErrorResponse({ res, message: "You do not have permission to delete this post on this page" });
+    }
     // Delete image files if necessary
     for (const imageUrl of post.imageUrls) {
       await deleteFileByUrl(imageUrl);
@@ -154,7 +199,10 @@ const changeStatusPost = async (req, res) => {
     if (!post) {
       return makeErrorResponse({ res, message: "Post not found" });
     }
-
+    const pageMember = await PageMember.findOne({ page: post.page, user: req.user._id });
+    if (!pageMember || ![1, 2].includes(pageMember.role)) {
+      return makeErrorResponse({ res, message: "You do not have permission to change status this post on this page" });
+    }
     if (post.status !== 1) {
       return makeErrorResponse({
         res,
@@ -202,4 +250,11 @@ const changeStatusPost = async (req, res) => {
   }
 };
 
-export { createPost, getPosts, updatePost, deletePost, changeStatusPost };
+export { 
+  createPost, 
+  getPosts, 
+  updatePost, 
+  deletePost, 
+  getPost, 
+  changeStatusPost 
+};

@@ -1,5 +1,6 @@
 import mongoose from "mongoose";
 import PagePost from "../models/pagePostModel.js";
+import PageMember from "../models/pageMemberModel.js";
 import { formatDistanceToNow } from "../configurations/schemaConfig.js";
 import Comment from "../models/commentModel.js";
 import PostReaction from "../models/postReactionModel.js";
