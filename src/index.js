@@ -31,9 +31,9 @@ import { settingRouter } from "./routes/settingRouter.js";
 import { pageRouter } from "./routes/pageRouter.js";
 import { pageFollowerRouter } from "./routes/pageFollowerRouter.js";
 import { pageMemberRouter } from "./routes/pageMemberRouter.js";
-import { pagePostRouter
-  
- } from "./routes/pagePostRouter.js";
+import { pagePostRouter} from "./routes/pagePostRouter.js";
+import { pagePostCommentRouter } from "./routes/pagePostCommentRouter.js";
+
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const app = express();
@@ -66,6 +66,8 @@ app.use("/v1/page", pageRouter);
 app.use("/v1/page-follower", pageFollowerRouter);
 app.use("/v1/page-member", pageMemberRouter);
 app.use("/v1/Page-Post", pagePostRouter);
+app.use("/v1/page-post-comment", pagePostCommentRouter);
+
 
 app.use(express.static(path.join(__dirname, "../public")));
 app.get("/", (req, res) => {
