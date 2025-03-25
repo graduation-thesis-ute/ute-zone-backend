@@ -1,0 +1,285 @@
+Table User {
+  id string [primary key]
+  displayName string
+  email string
+  password string
+  phone string
+  studentId string
+  birthDate date
+  otp string
+  bio string
+  avatarUrl string
+  status integer // 0: inactive, 1: active
+  secretKey string
+  roleId string [ref: > Role.id]
+  isSuperAdmin integer // 0: inactive, 1: active
+  lastLogin date
+}
+
+Table Role {
+  id string [primary key]
+  name string
+  permissions string[] [ref: <> Permission.id]
+  kind integer // 1: user, 2: manager, 3: admin
+}
+
+Table Permission {
+  id string [primary key]
+  name string
+  groupName string
+  permissionCode string
+}
+
+Table Setting {
+  id string [primary key]
+  title string
+  keyName string
+  roleKind integer // 1: user, 2: manager, 3: admin
+  value integer
+}
+
+Table Friendship {
+  id string [primary key]
+  sender string [ref: > User.id]
+  receiver string [ref: > User.id]
+  status integer // 1: pending, 2: accepted
+  followers string[]
+}
+
+Table Conversation {
+  id string [primary key]
+  name string
+  avatarUrl string
+  kind integer // 1: group, 2: private
+  friendship string [ref: > Friendship.id]
+  owner string [ref: > User.id]
+  lastMessage string [ref: > Message.id]
+  canMessage integer // 0, 1
+  canUpdate integer // 0, 1
+  canAddMember integer // 0, 1
+}
+
+Table ConversationMember {
+  id string [primary key]
+  conversation string [ref: > Conversation.id]
+  user string [ref: > User.id]
+  lastReadMessage string [ref: > Message.id]
+}
+
+Table Message {
+  id string [primary key]
+  conversation string [ref: > Conversation.id]
+  user string [ref: > User.id]
+  content string
+  imageUrl string
+  parent string [ref: > Message.id]
+}
+
+Table MessageReaction {
+  id string [primary key]
+  user string [ref: > User.id]
+  message string [ref: > Message.id]
+}
+
+Table Post {
+  id string [primary key]
+  user string [ref: > User.id]
+  content string
+  imageUrls string[]
+  kind integer // 1: public, 2: friend, 3: only me
+  status integer // 1: pending, 2: accepted, 3: rejected
+  isUpdated integer // 0, 1
+}
+
+Table PostReaction {
+  id string [primary key]
+  user string [ref: > User.id]
+  post string [ref: > Post.id]
+}
+
+Table Comment {
+  id string [primary key]
+  user string [ref: > User.id]
+  post string [ref: > Post.id]
+  content string
+  imageUrl string
+  parent string [ref: > Comment.id]
+}
+
+Table CommentReaction {
+  id string [primary key]
+  user string [ref: > User.id]
+  comment string [ref: > Comment.id]
+}
+
+Table Story {
+  id string [primary key]
+  user string [ref: > User.id]
+  imageUrl string
+}
+
+Table StoryView {
+  id string [primary key]
+  user string [ref: > User.id]
+  story string [ref: > Story.id]
+}
+
+Table Notification {
+  id string [primary key]
+  user string [ref: > User.id]
+  data mixed
+  kind integer // 1: info, 2: success, 3: fail
+  message string
+  status integer // 1: sent, 2: read
+}
+
+//page
+Table Page {
+  id string [primary key]
+  name string // Tên trang
+  description string // Mô tả trang
+  avatarUrl string
+  coverUrl string //ảnh bìa
+  category string // Loại hình (cửa hàng, giải trí, giáo dục,...)
+  creator string [ref: > User.id] // Người tạo trang
+  createdAt date
+  status integer // 1: active, 2: inactive, 3: banned
+}
+Table PageMember {
+  id string [primary key]
+  page string [ref: > Page.id]
+  user string [ref: > User.id]
+  role integer // 1: owner: Chủ sở hữu Page, 2: admin: Có quyền quản lý toàn bộ Page., 3: editor: Chỉ có quyền đăng bài.
+  joinedAt date
+}
+
+Table PagePost {
+  id string [primary key]
+  page string [ref: > Page.id]
+  user string [ref: > User.id] // Người đăng bài (quản trị viên hoặc chủ sở hữu)
+  content string
+  imageUrls string[]
+  createdAt date
+  kind interger // 1. public, 2. follower, 3.only page member
+  status integer // // 1: pending, 2: accepted, 3: rejected
+  isUpdated integer // 0, 1
+}
+Table PagePostComment {
+  id string [primary key]
+  user string [ref: > User.id]
+  pagePost string [ref: > PagePost.id]
+  content string
+  imageUrl string
+  parent string [ref: > PagePostComment.id]
+}
+Table PagePostReaction {
+  id string [primary key]
+  user string [ref: > User.id]
+  pagePost string [ref: > PagePost.id]
+  reactionType Interger
+}
+Table PagePostCommentReaction {
+  id string [primary key]
+  user string [ref: > User.id]
+  pagePostComment string [ref: > PagePostComment.id]
+}
+
+Table PageFollower {
+  id string [primary key]
+  page string [ref: > Page.id]
+  user string [ref: > User.id]
+  followedAt date
+}
+
+//group
+Table Group {
+  id string [primary key]
+  name string // Tên nhóm
+  description string // Mô tả nhóm
+  avatarUrl string // Ảnh đại diện
+  coverUrl string // Ảnh bìa
+  privacy integer // 1: public, 2: private
+  owner string [ref: > User.id] // Người tạo nhóm
+  createdAt date
+  status integer // 1: active, 2: inactive, 3: banned
+}
+
+Table GroupMember {
+  id string [primary key]
+  group string [ref: > Group.id]
+  user string [ref: > User.id]
+  role integer // 1: owner, 2: admin, 3: moderator, 4: member, 5: pending
+  status interger //1. active, 2.banned
+  joinedAt date
+}
+
+Table GroupPost {
+  id string [primary key]
+  group string [ref: > Group.id]
+  user string [ref: > User.id] // Người đăng bài
+  content string
+  imageUrls string[]
+  createdAt date
+  status integer // 1: pending, 2: approved, 3: rejected
+}
+
+Table GroupJoinRequest {
+  id string [primary key]
+  group string [ref: > Group.id]
+  user string [ref: > User.id]
+  status integer // 1: pending, 2: approved, 3: rejected
+  requestedAt date
+}
+//chatbox AI
+Table ChatBoxSession {
+  id string [primary key] // ID của phiên chat
+  user string [ref: > User.id] // Người dùng trò chuyện với AI
+  createdAt date // Ngày tạo phiên chat
+  status integer // 1: active, 2: ended
+}
+Table ChatBoxMessage {
+  id string [primary key] // ID của tin nhắn
+  session string [ref: > ChatBoxSession.id] // Thuộc phiên hội thoại nào
+  sender string // "user" hoặc "AI"
+  user string [ref: > User.id] // Ai gửi tin nhắn (chỉ dùng nếu sender = "user")
+  message string // Nội dung tin nhắn
+  response string // Phản hồi của AI (nếu có)
+  createdAt date // Thời gian gửi tin nhắn
+}
+Table ChatBoxSuggestion {
+  id string [primary key]
+  message string // Nội dung tin nhắn gốc
+  suggestedResponses string[] // Danh sách phản hồi gợi ý từ AI
+  createdAt date
+}
+Table ChatBoxFeedback {
+  id string [primary key]
+  message string [ref: > ChatBoxMessage.id] // Tin nhắn được đánh giá
+  user string [ref: > User.id] // Người đánh giá
+  rating integer // 1 đến 5 sao
+  comment string // Ý kiến bổ sung của người dùng (nếu có)
+  createdAt date
+}
+Table ChatBoxHistory {
+  id string [primary key]
+  user string [ref: > User.id] // Người chat với AI
+  messages mixed // JSON chứa toàn bộ cuộc hội thoại
+  createdAt date
+}
+Table ChatBoxTopic {
+  id string [primary key]
+  session string [ref: > ChatBoxSession.id]
+  topic string // Chủ đề hội thoại (ví dụ: "Lập trình", "Tư vấn sức khỏe")
+  confidence float // Độ chính xác của AI khi phân loại chủ đề (0.0 - 1.0)
+  createdAt date
+}
+Table AIModel {
+  id string [primary key]
+  modelName string // Tên mô hình (GPT-4, Dialogflow, Rasa...)
+  version string // Phiên bản AI
+  status integer // 1: active, 2: deprecated
+  createdAt date
+}
+
+
+
