@@ -230,6 +230,29 @@ Table GroupJoinRequest {
   status integer // 1: pending, 2: approved, 3: rejected
   requestedAt date
 }
+Table GroupPostComment {
+  id string [primary key]
+  user string [ref: > User.id] // Người dùng viết bình luận
+  groupPost string [ref: > GroupPost.id] // Bài đăng trong nhóm mà bình luận thuộc về
+  content string // Nội dung bình luận
+  imageUrl string // Ảnh đính kèm (nếu có)
+  parent string [ref: > GroupPostComment.id] // ID bình luận cha (nếu là bình luận phản hồi)
+}
+
+Table GroupPostReaction {
+  id string [primary key]
+  user string [ref: > User.id] // Người dùng bày tỏ cảm xúc
+  groupPost string [ref: > GroupPost.id] // Bài đăng trong nhóm mà cảm xúc liên quan
+  reactionType integer // Loại cảm xúc (ví dụ: 1: like, 2: love, 3: wow, ... tùy chọn)
+}
+
+Table GroupPostCommentReaction {
+  id string [primary key]
+  user string [ref: > User.id] // Người dùng bày tỏ cảm xúc cho bình luận
+  groupPostComment string [ref: > GroupPostComment.id] // Bình luận trong bài đăng nhóm mà cảm xúc liên quan
+  reactionType integer // Loại cảm xúc (ví dụ: 1: like, 2: love, 3: wow, ... tùy chọn)
+}
+
 //chatbox AI
 Table ChatBoxSession {
   id string [primary key] // ID của phiên chat
