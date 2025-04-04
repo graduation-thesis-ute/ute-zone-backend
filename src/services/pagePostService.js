@@ -4,6 +4,8 @@ import PageMember from "../models/pageMemberModel.js";
 import { formatDistanceToNow } from "../configurations/schemaConfig.js";
 import Comment from "../models/commentModel.js";
 import PostReaction from "../models/postReactionModel.js";
+import PagePostComment from "../models/pagePostCommentModel.js";
+import PagePostReaction from "../models/pagePostReactionModel.js";
 
 const formatPagePostData = async (pagePost, currentUser) => {
     // Tìm thông tin thành viên của trang (PageMember) với userId và pageId
@@ -21,7 +23,16 @@ const formatPagePostData = async (pagePost, currentUser) => {
 
     // Kiểm tra quyền sở hữu bài viết
     pagePost.isOwner = pagePost.user._id.equals(currentUser._id) ? 1 : 0;
-
+    const comments = await PagePostComment.find({ post: pagePost._id });
+    const reactions = await PagePostReaction.find({ post: pagePost._id });
+    pagePost.totalComments = comments.length;
+    pagePost.totalReactions = reactions.length;
+    pagePost.isReacted = (await PagePostReaction.exists({
+        user: currentUser._id,
+        post: pagePost._id,
+    }))
+    ? 1
+    : 0;
     return {
         _id: pagePost._id,
         user: {
@@ -40,10 +51,18 @@ const formatPagePostData = async (pagePost, currentUser) => {
             },
             },
         },
+        page: {
+            _id: pagePost.page,
+            name: pagePost.page.name,
+            avatarUrl: pagePost.page.avatarUrl,
+        },
         content: pagePost.content, // Thêm các thông tin bạn cần hiển thị
         imageUrls: pagePost.imageUrls,
         createdAt: pagePost.createdAt, // Thêm thông tin ngày tạo
         isOwner: pagePost.isOwner,
+        totalcomments: pagePost.totalComments,
+        totalReactions: pagePost.totalReactions,
+        isReacted: pagePost.isReacted,
         isUpdated: pagePost.isUpdated,
     };
 };
@@ -51,6 +70,7 @@ const formatPagePostData = async (pagePost, currentUser) => {
 // Get list of page posts with filters and pagination
 const getListPagePosts = async (req) => {
     const {
+      pageId,
       content,
       status,
       user,
@@ -66,7 +86,9 @@ const getListPagePosts = async (req) => {
   
     // Start building the query for posts
     let postQuery = {};
-  
+    if (mongoose.isValidObjectId(pageId)) {
+      postQuery.page = new mongoose.Types.ObjectId(pageId);
+    }
     // Filter by kind
     if (kind) {
       postQuery.kind = Number(kind); // 1: public, 2: follower, 3: only page member

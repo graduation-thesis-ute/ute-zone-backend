@@ -1,6 +1,7 @@
 import Page from "../models/pageModel.js";
 import Notification from "../models/notificationModel.js";
 import PageMember from "../models/pageMemberModel.js";
+import PageFollower from "../models/pageFollowerModel.js";
 import {
     deleteFileByUrl,
     isValidUrl,
@@ -36,11 +37,19 @@ const createPage = async (req, res) => {
             status: newStatus,
         })
 
+        // Create page member (owner)
         await PageMember.create({
             page: page._id,
             user: user._id,
             role: 1,  // Role '1' is for the owner
-          });
+        });
+
+        // Auto follow the page
+        await PageFollower.create({
+            page: page._id,
+            user: user._id,
+        });
+
         return makeSuccessResponse({
             res,
             message: "Create page success"

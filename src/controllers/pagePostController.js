@@ -101,18 +101,7 @@ const getPost = async (req, res) => {
 // Controller for fetching page posts
 const getPosts = async (req, res) => {
   try {
-    const id  = req.params.id;
-    const currentUser = req.user;
-  
-    const page = await Page.findById(id);
-
-    if (!page) {
-      return makeErrorResponse({ res, message: "Page not found" });
-    }
-    const pageMember = await PageMember.findOne({ page: id, user: req.user._id });
-    if (!pageMember || ![1, 2].includes(pageMember.role)) {
-      return makeErrorResponse({ res, message: "You do not have permission to view list post on this page" });
-    }
+    
     const result = await getListPagePosts(req);
     return makeSuccessResponse({ 
       res, 

@@ -26,6 +26,7 @@ const formatPageData = async (page, currentUser) => {
         category: page.category,
         createdAt: formatDistanceToNow(page.createdAt),
         totalFollowers: followers.length,
+        kind: page.kind,
         isOwner: isOwner,
     };
 };
@@ -33,7 +34,7 @@ const formatPageData = async (page, currentUser) => {
 const getListPages = async (req) => {
     const {
         name,
-        isPaged = "1",
+        isPaged,
         page = 0,
         size = isPaged === "0" ? Number.MAX_SAFE_INTEGER : 10,
     } = req.query;

@@ -21,6 +21,7 @@ const getListPageMembers = async(req) => {
     const {
         page,
         isPaged,
+        user,
         pageNumber = 0,
         size = isPaged === "0" ? Number.MAX_SAFE_INTEGER: 10,
     } = req.query;
@@ -32,7 +33,13 @@ const getListPageMembers = async(req) => {
     if (mongoose.isValidObjectId(page)){
         query.page = new mongoose.Types.ObjectId(page);
     }
-
+    if (mongoose.isValidObjectId(user)){
+        query.user = new mongoose.Types.ObjectId(user);
+    }
+    // if (role){
+    //     query.role = role;
+    // }       
+   // const sortCriteria = sortKind === "1" ? {status: 1, createdAt: -1} : {createdAt: -1};
     const [totalElements, pageMembers] = await Promise.all([
         PageMember.countDocuments(query),
         PageMember.find(query).populate("user page").sort({createAt: 1}).skip(offset).limit(limit),
