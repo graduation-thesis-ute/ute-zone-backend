@@ -42,16 +42,20 @@ const setupSocketHandlers = (io) => {
     // Các sự kiện mới cho Video Call
     socket.on(
       "START_VIDEO_CALL",
-      ({ conversationId, callerId, receiverId }) => {
+      ({ conversationId, callerId, callerName, callerAvatar, receiverId }) => {
         console.log("START_VIDEO_CALL event received:", {
           conversationId,
           callerId,
+          callerName,
+          callerAvatar,
           receiverId,
         });
         // Gửi thông báo cuộc gọi đến người nhận - sử dụng userId thay vì conversationId
         // để đảm bảo người nhận nhận được thông báo ngay cả khi không ở trong conversation
         io.to(receiverId).emit("INCOMING_VIDEO_CALL", {
           callerId,
+          callerName,
+          callerAvatar,
           conversationId,
         });
       }
