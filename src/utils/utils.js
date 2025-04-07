@@ -92,7 +92,7 @@ const setupSocketHandlers = (io) => {
 
         // Send notification to save "Missed call" message
         io.to(conversationId).emit("CALL_ENDED", {
-          message: "Missed call",
+          message: "Cuộc gọi bị nhỡ",
           senderId: callerId,
           receiverId,
         });
@@ -114,17 +114,21 @@ const setupSocketHandlers = (io) => {
       io.to(data.to).emit("ICE_CANDIDATE", data);
     });
 
-    socket.on("END_VIDEO_CALL", ({ conversationId, callerId, receiverId }) => {
-      // Thông báo cuộc gọi kết thúc
-      io.to(receiverId).emit("VIDEO_CALL_ENDED", { callerId });
-      io.to(callerId).emit("VIDEO_CALL_ENDED", { receiverId });
-      // Gửi thông báo để lưu tin nhắn "Video call ended"
-      io.to(conversationId).emit("CALL_ENDED", {
-        message: "Video call ended",
-        senderId: callerId,
-        receiverId,
-      });
-    });
+    socket.on(
+      "END_VIDEO_CALL",
+      ({ conversationId, callerId, receiverId, message }) => {
+        // Thông báo cuộc gọi kết thúc
+        io.to(receiverId).emit("VIDEO_CALL_ENDED", { callerId });
+        io.to(callerId).emit("VIDEO_CALL_ENDED", { receiverId });
+        // Gửi thông báo để lưu tin nhắn "Video call ended"
+        io.to(conversationId).emit("CALL_ENDED", {
+          message,
+          senderId: callerId,
+          receiverId,
+        });
+        console.log("message END_VIDEO_CALL", message);
+      }
+    );
 
     socket.on("disconnect", () => {
       console.log("A user disconnected:", socket.id);
