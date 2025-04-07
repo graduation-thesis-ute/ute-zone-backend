@@ -23,6 +23,14 @@ const setupSocketHandlers = (io) => {
       socket.leave(conversationId);
     });
 
+    socket.on("JOIN_USER", (userId) => {
+      socket.join(userId);
+    });
+
+    socket.on("LEAVE_USER", (userId) => {
+      socket.leave(userId);
+    });
+
     socket.on("JOIN_NOTIFICATION", (userId) => {
       socket.join(userId);
     });
@@ -40,7 +48,8 @@ const setupSocketHandlers = (io) => {
           callerId,
           receiverId,
         });
-        // Gửi thông báo cuộc gọi đến người nhận
+        // Gửi thông báo cuộc gọi đến người nhận - sử dụng userId thay vì conversationId
+        // để đảm bảo người nhận nhận được thông báo ngay cả khi không ở trong conversation
         io.to(receiverId).emit("INCOMING_VIDEO_CALL", {
           callerId,
           conversationId,
@@ -62,14 +71,28 @@ const setupSocketHandlers = (io) => {
     socket.on(
       "REJECT_VIDEO_CALL",
       ({ callerId, receiverId, conversationId }) => {
-        // Thông báo người gọi rằng cuộc gọi bị từ chối
+        console.log("REJECT_VIDEO_CALL event received:", {
+          callerId,
+          receiverId,
+          conversationId,
+        });
+
+        // Notify the caller that the call was rejected
         io.to(callerId).emit("VIDEO_CALL_REJECTED", {
           receiverId,
           conversationId,
         });
-        // Gửi thông báo để lưu tin nhắn "Missed call"
+
+        // Also notify the receiver (callee) that the call was rejected
+        // This ensures the callee's popup is dismissed if they haven't already dismissed it
+        io.to(receiverId).emit("VIDEO_CALL_REJECTED", {
+          callerId,
+          conversationId,
+        });
+
+        // Send notification to save "Missed call" message
         io.to(conversationId).emit("CALL_ENDED", {
-          message: "Missed call",
+          message: "Cuộc gọi bị nhỡ",
           senderId: callerId,
           receiverId,
         });
@@ -91,17 +114,21 @@ const setupSocketHandlers = (io) => {
       io.to(data.to).emit("ICE_CANDIDATE", data);
     });
 
-    socket.on("END_VIDEO_CALL", ({ conversationId, callerId, receiverId }) => {
-      // Thông báo cuộc gọi kết thúc
-      io.to(receiverId).emit("VIDEO_CALL_ENDED", { callerId });
-      io.to(callerId).emit("VIDEO_CALL_ENDED", { receiverId });
-      // Gửi thông báo để lưu tin nhắn "Video call ended"
-      io.to(conversationId).emit("CALL_ENDED", {
-        message: "Video call ended",
-        senderId: callerId,
-        receiverId,
-      });
-    });
+    socket.on(
+      "END_VIDEO_CALL",
+      ({ conversationId, callerId, receiverId, message }) => {
+        // Thông báo cuộc gọi kết thúc
+        io.to(receiverId).emit("VIDEO_CALL_ENDED", { callerId });
+        io.to(callerId).emit("VIDEO_CALL_ENDED", { receiverId });
+        // Gửi thông báo để lưu tin nhắn "Video call ended"
+        io.to(conversationId).emit("CALL_ENDED", {
+          message,
+          senderId: callerId,
+          receiverId,
+        });
+        console.log("message END_VIDEO_CALL", message);
+      }
+    );
 
     socket.on("disconnect", () => {
       console.log("A user disconnected:", socket.id);
