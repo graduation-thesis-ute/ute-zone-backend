@@ -14,7 +14,7 @@ const setupSocketHandlers = (io) => {
   io.on("connection", (socket) => {
     console.log("A user connected:", socket.id);
 
-    // Các sự kiện hiện có
+    // Room handling
     socket.on("JOIN_CONVERSATION", (conversationId) => {
       socket.join(conversationId);
     });
@@ -39,19 +39,18 @@ const setupSocketHandlers = (io) => {
       socket.leave(userId);
     });
 
-    // Các sự kiện mới cho Video Call
+    // Video Call - Start
     socket.on(
       "START_VIDEO_CALL",
       ({ conversationId, callerId, callerName, callerAvatar, receiverId }) => {
-        console.log("START_VIDEO_CALL event received:", {
+        console.log("START_VIDEO_CALL event received (socket):", {
           conversationId,
           callerId,
           callerName,
           callerAvatar,
           receiverId,
         });
-        // Gửi thông báo cuộc gọi đến người nhận - sử dụng userId thay vì conversationId
-        // để đảm bảo người nhận nhận được thông báo ngay cả khi không ở trong conversation
+
         io.to(receiverId).emit("INCOMING_VIDEO_CALL", {
           callerId,
           callerName,
@@ -61,40 +60,53 @@ const setupSocketHandlers = (io) => {
       }
     );
 
+    // Video Call - Accept
     socket.on(
       "ACCEPT_VIDEO_CALL",
-      ({ callerId, receiverId, conversationId }) => {
-        // Thông báo người gọi rằng cuộc gọi được chấp nhận
+      ({
+        callerId,
+        receiverId,
+        receiverName,
+        receiverAvatar,
+        conversationId,
+      }) => {
+        console.log("ACCEPT_VIDEO_CALL event received (socket):", {
+          callerId,
+          receiverId,
+          receiverName,
+          receiverAvatar,
+          conversationId,
+        });
+
         io.to(callerId).emit("VIDEO_CALL_ACCEPTED", {
           receiverId,
+          receiverName,
+          receiverAvatar,
           conversationId,
         });
       }
     );
 
+    // Video Call - Reject
     socket.on(
       "REJECT_VIDEO_CALL",
       ({ callerId, receiverId, conversationId }) => {
-        console.log("REJECT_VIDEO_CALL event received:", {
+        console.log("REJECT_VIDEO_CALL event received (socket):", {
           callerId,
           receiverId,
           conversationId,
         });
 
-        // Notify the caller that the call was rejected
         io.to(callerId).emit("VIDEO_CALL_REJECTED", {
           receiverId,
           conversationId,
         });
 
-        // Also notify the receiver (callee) that the call was rejected
-        // This ensures the callee's popup is dismissed if they haven't already dismissed it
         io.to(receiverId).emit("VIDEO_CALL_REJECTED", {
           callerId,
           conversationId,
         });
 
-        // Send notification to save "Missed call" message
         io.to(conversationId).emit("CALL_ENDED", {
           message: "Cuộc gọi bị nhỡ",
           senderId: callerId,
@@ -103,37 +115,45 @@ const setupSocketHandlers = (io) => {
       }
     );
 
+    // WebRTC Signaling
     socket.on("OFFER", (data) => {
-      // Gửi SDP offer từ caller đến receiver
+      console.log("OFFER event received (socket):", data);
       io.to(data.to).emit("OFFER", data);
     });
 
     socket.on("ANSWER", (data) => {
-      // Gửi SDP answer từ receiver đến caller
+      console.log("ANSWER event received (socket):", data);
       io.to(data.to).emit("ANSWER", data);
     });
 
     socket.on("ICE_CANDIDATE", (data) => {
-      // Trao đổi ICE candidates giữa hai bên
+      console.log("ICE_CANDIDATE event received (socket):", data);
       io.to(data.to).emit("ICE_CANDIDATE", data);
     });
 
-    socket.on(
-      "END_VIDEO_CALL",
-      ({ conversationId, callerId, receiverId, message }) => {
-        // Thông báo cuộc gọi kết thúc
-        io.to(receiverId).emit("VIDEO_CALL_ENDED", { callerId });
-        io.to(callerId).emit("VIDEO_CALL_ENDED", { receiverId });
-        // Gửi thông báo để lưu tin nhắn "Video call ended"
-        io.to(conversationId).emit("CALL_ENDED", {
-          message,
-          senderId: callerId,
-          receiverId,
-        });
-        console.log("message END_VIDEO_CALL", message);
-      }
-    );
+    // Video Call - Caller cancels
+    socket.on("END_CALL_WHILE_CALLING_FROM_CALLER", ({ receiverId }) => {
+      io.to(receiverId).emit("END_CALL_WHILE_CALLING_BY_CALLER");
+      console.log("Video call ended by the caller in socket.");
+    });
 
+    // Video Call - Receiver cancels
+    socket.on("END_CALL_WHILE_CALLING_FROM_RECEIVER", ({ callerId }) => {
+      io.to(callerId).emit("END_CALL_WHILE_CALLING_BY_RECEIVER");
+    });
+
+    // Video Call - End
+    socket.on("END_VIDEO_CALL_FROM_CALLER", ({ receiverId }) => {
+      io.to(receiverId).emit("END_VIDEO_CALL_BY_CALLER");
+      console.log("Video call ended by the caller in socket.");
+    });
+
+    socket.on("END_VIDEO_CALL_FROM_RECEIVER", ({ callerId }) => {
+      io.to(callerId).emit("END_VIDEO_CALL_BY_RECEIVER");
+      console.log("Video call ended by the receiver in socket.");
+    });
+
+    // Disconnect
     socket.on("disconnect", () => {
       console.log("A user disconnected:", socket.id);
     });
