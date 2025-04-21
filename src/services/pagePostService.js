@@ -6,6 +6,7 @@ import Comment from "../models/commentModel.js";
 import PostReaction from "../models/postReactionModel.js";
 import PagePostComment from "../models/pagePostCommentModel.js";
 import PagePostReaction from "../models/pagePostReactionModel.js";
+import Page from "../models/pageModel.js";
 
 const formatPagePostData = async (pagePost, currentUser) => {
     // Tìm thông tin thành viên của trang (PageMember) với userId và pageId
@@ -23,16 +24,21 @@ const formatPagePostData = async (pagePost, currentUser) => {
 
     // Kiểm tra quyền sở hữu bài viết
     pagePost.isOwner = pagePost.user._id.equals(currentUser._id) ? 1 : 0;
-    const comments = await PagePostComment.find({ post: pagePost._id });
-    const reactions = await PagePostReaction.find({ post: pagePost._id });
+    const comments = await PagePostComment.find({ pagePost: pagePost._id });
+    const page = await Page.findById(pagePost.page);
+    const reactions = await PagePostReaction.find({ pagePost: pagePost._id });
     pagePost.totalComments = comments.length;
     pagePost.totalReactions = reactions.length;
     pagePost.isReacted = (await PagePostReaction.exists({
         user: currentUser._id,
-        post: pagePost._id,
+        pagePost: pagePost._id,
     }))
     ? 1
     : 0;
+    console.log("pagePost.page.name", page.name); 
+    console.log("pagePost.page.avatarUrl", page.avatarUrl);
+    console.log("total comments", comments.length);
+    console.log("total reactions", reactions.length);
     return {
         _id: pagePost._id,
         user: {
@@ -53,14 +59,14 @@ const formatPagePostData = async (pagePost, currentUser) => {
         },
         page: {
             _id: pagePost.page,
-            name: pagePost.page.name,
-            avatarUrl: pagePost.page.avatarUrl,
+            name: page.name,
+            avatarUrl: page.avatarUrl,
         },
         content: pagePost.content, // Thêm các thông tin bạn cần hiển thị
         imageUrls: pagePost.imageUrls,
         createdAt: pagePost.createdAt, // Thêm thông tin ngày tạo
         isOwner: pagePost.isOwner,
-        totalcomments: pagePost.totalComments,
+        totalComments: pagePost.totalComments,
         totalReactions: pagePost.totalReactions,
         isReacted: pagePost.isReacted,
         isUpdated: pagePost.isUpdated,

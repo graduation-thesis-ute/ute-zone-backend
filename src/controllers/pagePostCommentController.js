@@ -152,12 +152,8 @@ const getComment = async (req, res) => {
 
 const getComments = async (req, res) => {
   try {
-    const id = req.params.id;
-    const post = await PagePost.findById(id);
-    if (!post){
-        return makeErrorResponse({res, message: "post not found"});
-    }
-    const result = await getPagePostListComments(req, id);
+
+    const result = await getPagePostListComments(req);
     return makeSuccessResponse({
       res,
       data: result,

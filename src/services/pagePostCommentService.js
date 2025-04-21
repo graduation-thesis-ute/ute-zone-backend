@@ -3,6 +3,7 @@ import PagePostComment from "../models/pagePostCommentModel.js";
 import PagePost from "../models/pagePostModel.js"; 
 import { isValidObjectId } from "./apiService.js";
 import { formatDistanceToNow } from "../configurations/schemaConfig.js";
+import PagePostReaction from "../models/pagePostReactionModel.js";
 
 const formatPagePostCommentData = async (comment, currentUser) => {
     comment.isOwner = comment.user._id.equals(currentUser._id) ? 1: 0;
@@ -13,11 +14,20 @@ const formatPagePostCommentData = async (comment, currentUser) => {
     // })) ? 1 : 0;
     comment.isChildren = comment.parent ? 1 : 0;
     comment.totalChildren = await PagePostComment.countDocuments({ parent: comment._id });
-    //comment.totalReactions = reactions.length;
+    const reactions = await PagePostReaction.find({ post: comment.pagePost });
+    comment.totalReactions = reactions.length;
+    const pagePost = await PagePost.findById(comment.pagePost);
+    console.log("pagePost", pagePost);
+    console.log("comment.totalReactions", comment.totalReactions);
+    console.log("comment.isOwner", comment.isOwner);
+    console.log("comment.isUpdated", comment.isUpdated);
+    console.log("comment.isChildren", comment.isChildren);
+    console.log("comment.totalChildren", comment.totalChildren);
+    console.log("comment.post", comment.pagePost);
     return {
       _id: comment._id,
       post: {
-        _id: comment.post,
+        _id: comment.pagePost,
       },
       user: {
         _id: comment.user._id,
@@ -37,7 +47,7 @@ const formatPagePostCommentData = async (comment, currentUser) => {
       //totalReactions: comment.totalReactions,
     };
   };
-  const getPagePostListComments = async (req, pagePostId) => {
+  const getPagePostListComments = async (req) => {
     const {
         pagePost,
         content,
@@ -53,9 +63,7 @@ const formatPagePostCommentData = async (comment, currentUser) => {
     const limit = parseInt(size, 10);
   
     let query = {};
-    if (pagePostId) {
-        query.pagePost = pagePostId; // Không cần convert sang ObjectId vì findById đã xử lý
-    }
+
     if (isValidObjectId(parent)) {
       query.parent = new mongoose.Types.ObjectId(parent);
     }
@@ -65,7 +73,11 @@ const formatPagePostCommentData = async (comment, currentUser) => {
     if (content) {
       query.content = { $regex: content, $options: "i" };
     }
-  
+    if (isValidObjectId(pagePost)) {
+      const getPagePost = await PagePost.findById(pagePost);
+      console.log("pagePost", getPagePost);
+      query.pagePost = new mongoose.Types.ObjectId(pagePost);
+    }
     const [totalElements, comments] = await Promise.all([
       PagePostComment.countDocuments(query),
       PagePostComment.find(query)

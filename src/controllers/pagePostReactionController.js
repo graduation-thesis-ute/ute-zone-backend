@@ -17,46 +17,80 @@ import {
         }
         console.log(pagePost, user, reactionType);
         const getPagePost = await PagePost.findById(pagePost);
-            await PagePostReaction.create({
-                user: user._id,
-                pagePost,
-                reactionType,
-                });
-                if (!user._id.equals(getPagePost.user))
-                {
-                    await Notification.create({
-                        user: getPagePost.user,
-                        data: {
-                        pagePost: {
-                            _id: getPagePost._id,
-                        },
-                        user: {
-                            _id: user._id,
-                        },
-                    },
-                message: `${user.displayName} đã thả tim bài đăng của bạn`,
+
+        // Kiểm tra xem người dùng đã like bài viết này chưa
+        const existingReaction = await PagePostReaction.findOne({
+            user: user._id,
+            pagePost: pagePost
+        });
+
+        if (existingReaction) {
+            return res.status(400).json({
+                success: false,
+                message: 'Bạn đã thích bài viết này rồi'
             });
         }
-        return makeSuccessResponse({ res, message: "Reaction created successfully" });
+
+        const reaction = new PagePostReaction({
+            user: user._id,
+            pagePost,
+            reactionType,
+        });
+
+        await reaction.save();
+
+        // Lấy thông tin bài viết để gửi thông báo
+        const post = await PagePost.findById(pagePost).populate('page', 'name avatarUrl');
+        if (!post) {
+            return res.status(404).json({
+                success: false,
+                message: 'Bài viết không tồn tại'
+            });
+        }
+
+        // Gửi thông báo nếu người like không phải là chủ bài viết
+        if (post.user.toString() !== user._id.toString()) {
+            await Notification.create({
+                user: post.user,
+                type: 'PAGE_POST_REACTION',
+                content: `${user.fullName} đã thích bài viết của bạn`,
+                data: {
+                    pagePost: post._id,
+                    page: post.page._id,
+                    pageName: post.page.name,
+                    pageAvatar: post.page.avatarUrl
+                }
+            });
+        }
+
+        res.json({
+            success: true,
+            message: 'Thích bài viết thành công',
+            data: reaction
+        });
     } catch (error) {
-        return makeErrorResponse({res, message: error.message});
+        console.error('Error creating reaction:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Lỗi khi thích bài viết'
+        });
     }
   };
   const deletePagePostReaction = async (req, res) => {
     try {
         const pagePostId = req.params.id;
         const pagePostReaction = await PagePostReaction.findOne({
-        pagePost: pagePostId,
-        user: req.user._id,
-    });
-    if (!pagePostReaction) {
-        makeErrorResponse({res, message: "Page Post reaction not found"});
-    }
-    await pagePostReaction.deleteOne();
-    return makeSuccessResponse({
-        res, 
-        message: "Page Post reaction deleted successfully",
-    });  
+            pagePost: pagePostId,
+            user: req.user._id,
+        });
+        if (!pagePostReaction) {
+            return makeErrorResponse({res, message: "Page Post reaction not found"});
+        }
+        await pagePostReaction.deleteOne();
+        return makeSuccessResponse({
+            res, 
+            message: "Page Post reaction deleted successfully",
+        });  
     } catch (error) {
         return makeErrorResponse({res, message: error.message});
     }
