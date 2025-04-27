@@ -20,14 +20,34 @@ import {
   googleLoginUser,
 } from "../controllers/userController.js";
 import auth from "../middlewares/authentication.js";
+import { moderateContent } from "../utils/contentModerator.js";
 
 const router = express.Router();
+
+router.post("/chatbot", async (req, res) => {
+  const { content } = req.body;
+
+  const moderation = await moderateContent(content);
+
+  if (!moderation.isApproved) {
+    return res.status(400).json({
+      message: "Nội dung không được chấp nhận",
+      detail: moderation.reason,
+    });
+  }
+
+  // Nếu được duyệt => tiếp tục lưu post (giả lập)
+  return res.json({ message: "Bài viết đã được duyệt", content });
+});
 
 router.post("/login", loginUser);
 // Google OAuth
 router.get(
   "/auth/google",
-  passport.authenticate("google", { scope: ["profile", "email"] })
+  passport.authenticate("google", {
+    scope: ["profile", "email"],
+    prompt: "select_account",
+  })
 );
 router.get(
   "/auth/google/callback",

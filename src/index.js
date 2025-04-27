@@ -32,6 +32,7 @@ import { settingRouter } from "./routes/settingRouter.js";
 import "./configurations/googleConfig.js";
 import passport from "passport";
 
+
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const app = express();
