@@ -1,6 +1,7 @@
 import passport from "passport";
 import { Strategy as GoogleStrategy } from "passport-google-oauth20";
 import "dotenv/config";
+import User from "../models/userModel.js";
 
 passport.use(
   new GoogleStrategy(
@@ -29,9 +30,15 @@ passport.use(
 );
 
 passport.serializeUser((user, done) => {
-  done(null, user);
+  done(null, user.googleId); // Lưu googleId vào session
 });
 
-passport.deserializeUser((user, done) => {
-  done(null, user);
+passport.deserializeUser(async (googleId, done) => {
+  try {
+    const user = await User.findOne({ googleId }); // Tìm user theo googleId
+    done(null, user);
+  } catch (error) {
+    done(error, null);
+  }
 });
+export default passport;

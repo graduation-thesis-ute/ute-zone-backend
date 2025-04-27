@@ -54,16 +54,25 @@ const loginUser = async (req, res) => {
 };
 
 const googleLoginUser = async (req, res) => {
-  console.log("done");
+  console.log("Google login callback");
   const { googleId, email, name, avatar } = req.user;
-  console.log(googleId, name, email, avatar);
+
+  // Kiểm tra email có hợp lệ không
   if (!email || !EmailPattern.test(email)) {
-    return makeErrorResponse({ res, message: "Email không hợp lệ" });
+    return res.redirect(
+      `${process.env.FE_URL}/login?error=${encodeURIComponent(
+        "Vui lòng sử dụng email thuộc @student.hcmute.edu.vn hoặc @hcmute.edu.vn"
+      )}`
+    );
   }
+
   try {
-    const existingUser = await User.findOne({ email });
-    if (!existingUser) {
-      const user = await User.create({
+    // Tìm user theo email
+    let user = await User.findOne({ email });
+
+    if (!user) {
+      // Tạo user mới nếu chưa tồn tại
+      user = await User.create({
         googleId,
         displayName: name,
         email,
@@ -71,23 +80,28 @@ const googleLoginUser = async (req, res) => {
         status: 1,
         role: await Role.findOne({ kind: 1 }),
       });
-      const accessToken = createToken(user._id);
-      return res.redirect(`${process.env.FE_URL}?token=${accessToken}`);
-    } else {
-      if (!existingUser.googleId) {
-        const user = await existingUser.updateOne({ googleId });
-        const accessToken = createToken(user._id);
-        return res.redirect(`${process.env.FE_URL}?token=${accessToken}`);
-      }
-      const accessToken = createToken(existingUser._id);
-      console.log("Login GG acc: ", accessToken);
-      return res.redirect(`${process.env.FE_URL}?token=${accessToken}`);
+    } else if (!user.googleId) {
+      // Cập nhật googleId nếu user tồn tại nhưng chưa liên kết Google
+      user = await User.findOneAndUpdate(
+        { email },
+        { googleId },
+        { new: true }
+      );
     }
+
+    // Tạo access token
+    const accessToken = createToken(user._id);
+    console.log("Google login success, token:", accessToken);
+
+    // Chuyển hướng đến frontend với token
+    return res.redirect(`${process.env.FE_URL}?token=${accessToken}`);
   } catch (error) {
-    return makeErrorResponse({ res, message: error.message });
+    console.error("Google login error:", error);
+    return res.redirect(
+      `${process.env.FE_URL}/login?error=${encodeURIComponent(error.message)}`
+    );
   }
 };
-
 const getUserProfile = async (req, res) => {
   try {
     const { user } = req;
