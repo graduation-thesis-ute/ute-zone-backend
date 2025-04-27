@@ -20,11 +20,11 @@ import {
   googleLoginUser,
 } from "../controllers/userController.js";
 import auth from "../middlewares/authentication.js";
-import { moderateContent } from "../utils/contentModerator.js";
+import { moderateContent, chatWithBot } from "../utils/contentModerator.js";
 
 const router = express.Router();
 
-router.post("/chatbot", async (req, res) => {
+router.post("/moderate", async (req, res) => {
   const { content } = req.body;
 
   const moderation = await moderateContent(content);
@@ -38,6 +38,29 @@ router.post("/chatbot", async (req, res) => {
 
   // Nếu được duyệt => tiếp tục lưu post (giả lập)
   return res.json({ message: "Bài viết đã được duyệt", content });
+});
+
+router.post("/chatbot", async (req, res) => {
+  const { message } = req.body;
+
+  if (!message) {
+    return res
+      .status(400)
+      .json({ message: "Vui lòng cung cấp nội dung tin nhắn" });
+  }
+
+  try {
+    const response = await chatWithBot(message);
+    return res.json({
+      message: "Phản hồi từ chatbot",
+      response,
+    });
+  } catch (error) {
+    console.error("Lỗi khi gọi chatbot:", error);
+    return res
+      .status(500)
+      .json({ message: "Lỗi server, vui lòng thử lại sau" });
+  }
 });
 
 router.post("/login", loginUser);
