@@ -21,7 +21,7 @@ const groupPostSchema = new mongoose.Schema(
     }],
     status: {
       type: Number,
-      enum: [1, 2, 3], // 1: pending, 2: approved, 3: rejected
+      enum: [1, 2, 3], // 1: pending, 2: approved, 3: rejected 
       default: 1,
     },
     createdAt: {
