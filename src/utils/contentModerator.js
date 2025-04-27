@@ -30,3 +30,15 @@ export async function moderateContent(postText) {
     reason: result.text.trim(),
   };
 }
+
+export async function chatWithBot(userMessage) {
+  const messages = [
+    new SystemMessage(
+      "Bạn là một chatbot thân thiện, trả lời ngắn gọn và hữu ích bằng tiếng Việt. Hãy trả lời câu hỏi hoặc tin nhắn của người dùng một cách tự nhiên."
+    ),
+    new HumanMessage(userMessage),
+  ];
+
+  const result = await model.call(messages);
+  return result.text.trim();
+}
