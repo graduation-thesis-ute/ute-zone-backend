@@ -1,7 +1,9 @@
 import mongoose from "mongoose";
 import GroupMember from "../models/groupMemberModel.js";
 import User from "../models/userModel.js";
-
+import { formatDistanceToNow } from "../configurations/schemaConfig.js";
+import Group from "../models/groupModel.js";
+import { isValidObjectId } from "./apiService.js";
 const formatGroupMemberData = (groupMember) => {
     return {
         _id: groupMember._id,
@@ -21,7 +23,7 @@ const formatGroupMemberData = (groupMember) => {
 
 const getListGroupMembers = async (req) => {
     const {
-        page,
+        group,
         isPaged,
         pageNumber = 0,
         size = isPaged === "0" ? Number.MAX_SAFE_INTEGER : 10,

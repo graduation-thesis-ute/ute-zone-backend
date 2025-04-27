@@ -2,6 +2,7 @@ import GroupMember from "../models/groupMemberModel.js";
 import User from "../models/userModel.js";
 import Group from "../models/groupModel.js";
 import Notification from "../models/notificationModel.js";
+import GroupJoinRequest from "../models/groupJoinRequestModel.js";
 import {
     isValidObjectId,
     makeErrorResponse,
@@ -65,7 +66,8 @@ const getGroupMembers = async (req, res) => {
 
 const removeGroupMember = async (req, res) => {
     try {
-        const {groupMemberId} = req.params;
+        const {groupMemberId} = req.body;
+        console.log(groupMemberId);
         const groupMember = await GroupMember.findById(groupMemberId);
         if (!groupMember) {
             return makeErrorResponse({res, message: "Group member not found"});
@@ -73,6 +75,11 @@ const removeGroupMember = async (req, res) => {
         if (groupMember.role === 1) {
             return makeErrorResponse({res, message: "Cannot remove the group owner"});
         }
+        // Delete any group join requests for this user in this group
+        await GroupJoinRequest.deleteMany({
+            group: groupMember.group,
+            user: groupMember.user
+        });
         await groupMember.deleteOne();
         return makeSuccessResponse({res, message: "User removed successfully"});
     } catch (error) {

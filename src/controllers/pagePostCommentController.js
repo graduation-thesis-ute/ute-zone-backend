@@ -7,7 +7,11 @@ import {
     makeErrorResponse,
     makeSuccessResponse,
 } from "../services/apiService.js"
-import { formatPagePostCommentData, getPagePostListComments } from "../services/pagePostCommentService.js";
+import { 
+    formatPagePostCommentData, 
+    getPagePostListComments,
+    toggleCommentReaction 
+} from "../services/pagePostCommentService.js";
 
 const createComment  = async (req, res) => {
     try {
@@ -163,4 +167,23 @@ const getComments = async (req, res) => {
   }
 };
 
-export { createComment, updateComment, deleteComment, getComment, getComments };
+const handleCommentReaction = async (req, res) => {
+  try {
+    const result = await toggleCommentReaction(req);
+    return makeSuccessResponse({
+      res,
+      data: result,
+    });
+  } catch (error) {
+    return makeErrorResponse({ res, message: error.message });
+  }
+};
+
+export { 
+  createComment, 
+  updateComment, 
+  deleteComment, 
+  getComment, 
+  getComments,
+  handleCommentReaction 
+};

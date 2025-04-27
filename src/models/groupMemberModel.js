@@ -16,7 +16,7 @@ const GroupMemberSchema = new mongoose.Schema(
     role: {
       type: Number,
       required: true,
-      enum: [1, 2], // 1: admin, 2: member
+      enum: [1, 2, 3], // 1: admin, 2: manager, 3: member
       default: 2,
     },  
     status: {

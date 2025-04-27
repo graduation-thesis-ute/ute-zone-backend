@@ -37,6 +37,7 @@ import { pagePostReactionRouter } from "./routes/pagePostReactionRouter.js";
 import { pagePostCommentReactionRouter } from "./routes/pagePostCommentReactionRouter.js";
 import { groupRouter } from "./routes/groupRouter.js";
 import { groupMemberRouter } from "./routes/groupMemberRouter.js";
+import { groupJoinRequestRouter } from "./routes/groupJoinRequestRouter.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -75,6 +76,7 @@ app.use("/v1/page-post-reaction", pagePostReactionRouter);
 app.use("/v1/page-post-comment-reaction", pagePostCommentReactionRouter);
 app.use("/v1/group", groupRouter);
 app.use("/v1/group-member", groupMemberRouter);
+app.use("/v1/group-join-request", groupJoinRequestRouter);
 
 app.use(express.static(path.join(__dirname, "../public")));
 app.get("/", (req, res) => {

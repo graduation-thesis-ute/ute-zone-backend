@@ -15,7 +15,7 @@ const formatJoinRequestData = (joinRequest) => {
 
 export const getListJoinRequests = async (req) => {
   try {
-    const { groupId, userId, page = 1, limit = 10 } = req.query;
+    const { groupId, userId, status, page = 1, limit = 10 } = req.query;
     const query = {};
 
     if (groupId) {
@@ -30,6 +30,10 @@ export const getListJoinRequests = async (req) => {
         throw new Error("Invalid user id");
       }
       query.user = userId;
+    }
+
+    if (status) {
+      query.status = parseInt(status);
     }
 
     const joinRequests = await GroupJoinRequest.find(query)

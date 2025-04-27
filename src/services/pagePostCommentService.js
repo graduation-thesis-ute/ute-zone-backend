@@ -4,18 +4,21 @@ import PagePost from "../models/pagePostModel.js";
 import { isValidObjectId } from "./apiService.js";
 import { formatDistanceToNow } from "../configurations/schemaConfig.js";
 import PagePostReaction from "../models/pagePostReactionModel.js";
+import CommentReaction from "../models/commentReactionModel.js";
 
 const formatPagePostCommentData = async (comment, currentUser) => {
     comment.isOwner = comment.user._id.equals(currentUser._id) ? 1: 0;
     comment.isUpdated = comment.updatedAt.getTime() !== comment.createdAt.getTime() ? 1 : 0;
-    // comment.isReacted = (await CommentReaction.exists({
-    //   user: currentUser._id,
-    //   comment: comment._id,
-    // })) ? 1 : 0;
+    comment.isReacted = (await CommentReaction.exists({
+      user: currentUser._id,
+      comment: comment._id,
+    })) ? 1 : 0;
     comment.isChildren = comment.parent ? 1 : 0;
     comment.totalChildren = await PagePostComment.countDocuments({ parent: comment._id });
     const reactions = await PagePostReaction.find({ post: comment.pagePost });
     comment.totalReactions = reactions.length;
+    const commentReactions = await CommentReaction.find({ comment: comment._id });
+    comment.totalCommentReactions = commentReactions.length;
     const pagePost = await PagePost.findById(comment.pagePost);
     console.log("pagePost", pagePost);
     console.log("comment.totalReactions", comment.totalReactions);
@@ -39,15 +42,16 @@ const formatPagePostCommentData = async (comment, currentUser) => {
       createdAt: formatDistanceToNow(comment.createdAt),
       isOwner: comment.isOwner,
       isUpdated: comment.isUpdated,
-      // isReacted: comment.isReacted,
+      isReacted: comment.isReacted,
       isChildren: comment.isChildren,
+      totalCommentReactions: comment.totalCommentReactions,
       ...(comment.isChildren === 1
         ? { parent: { _id: comment.parent } }
         : { totalChildren: comment.totalChildren }),
-      //totalReactions: comment.totalReactions,
     };
-  };
-  const getPagePostListComments = async (req) => {
+};
+
+const getPagePostListComments = async (req) => {
     const {
         pagePost,
         content,
@@ -100,7 +104,43 @@ const formatPagePostCommentData = async (comment, currentUser) => {
       totalPages,
       totalElements,
     };
-  };
-  
-  export { formatPagePostCommentData, getPagePostListComments };
+};
+
+const toggleCommentReaction = async (req) => {
+  const { commentId, reactionType = 1 } = req.body;
+  const currentUser = req.user;
+
+  if (!isValidObjectId(commentId)) {
+    throw new Error("Invalid comment id");
+  }
+
+  const comment = await PagePostComment.findById(commentId);
+  if (!comment) {
+    throw new Error("Comment not found");
+  }
+
+  const existingReaction = await CommentReaction.findOne({
+    user: currentUser._id,
+    comment: commentId,
+  });
+
+  if (existingReaction) {
+    await existingReaction.deleteOne();
+    return { result: true, message: "Reaction removed" };
+  }
+
+  await CommentReaction.create({
+    user: currentUser._id,
+    comment: commentId,
+    reactionType,
+  });
+
+  return { result: true, message: "Reaction added" };
+};
+
+export { 
+  formatPagePostCommentData, 
+  getPagePostListComments,
+  toggleCommentReaction 
+};
   

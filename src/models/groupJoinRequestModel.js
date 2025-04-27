@@ -14,7 +14,7 @@ const groupJoinRequestSchema = new mongoose.Schema(
     },
     status: {
       type: Number,
-      enum: [1, 2, 3], // 1: pending, 2: approved, 3: rejected
+      enum: [0, 1, 2, 3], // 1: pending, 2: approved, 3: rejected 0.accepted
       default: 1,
     },
     requestedAt: {

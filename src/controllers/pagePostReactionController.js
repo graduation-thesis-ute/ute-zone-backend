@@ -25,9 +25,13 @@ import {
         });
 
         if (existingReaction) {
-            return res.status(400).json({
-                success: false,
-                message: 'Bạn đã thích bài viết này rồi'
+            // Nếu đã có reaction, cập nhật reaction type
+            existingReaction.reactionType = reactionType;
+            await existingReaction.save();
+            return makeSuccessResponse({
+                res,
+                message: "Cập nhật reaction thành công",
+                data: existingReaction
             });
         }
 
@@ -84,15 +88,17 @@ import {
             user: req.user._id,
         });
         if (!pagePostReaction) {
-            return makeErrorResponse({res, message: "Page Post reaction not found"});
+            return makeErrorResponse({res, message: "Không tìm thấy reaction"});
         }
         await pagePostReaction.deleteOne();
         return makeSuccessResponse({
             res, 
-            message: "Page Post reaction deleted successfully",
+            message: "Đã xóa reaction thành công",
+            data: { deleted: true }
         });  
     } catch (error) {
-        return makeErrorResponse({res, message: error.message});
+        console.error('Error deleting reaction:', error);
+        return makeErrorResponse({res, message: "Lỗi khi xóa reaction"});
     }
   }
 
