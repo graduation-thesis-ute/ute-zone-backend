@@ -1,10 +1,5 @@
 import { ChatOpenAI } from "@langchain/openai";
-import {
-  SystemMessage,
-  HumanMessage,
-  AIMessage,
-  trimMessages,
-} from "@langchain/core/messages";
+import { SystemMessage, HumanMessage } from "@langchain/core/messages";
 import "dotenv/config.js";
 
 const model = new ChatOpenAI({
