@@ -29,9 +29,9 @@ import { fileURLToPath } from "url";
 import { setupSocketHandlers } from "./utils/utils.js";
 import { statisticRouter } from "./routes/StatisticRouter.js";
 import { settingRouter } from "./routes/settingRouter.js";
+import { chatbotRouter } from "./routes/chatbotRouter.js";
 import "./configurations/googleConfig.js";
 import passport from "passport";
-
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -56,6 +56,7 @@ app.use(passport.session());
 
 app.use("/api-docs", swaggerUi.serve, swaggerUi.setup(swaggerDocs));
 app.use("/v1/user", userRouter);
+app.use("/v1/chatbot", chatbotRouter);
 app.use("/v1/role", roleRouter);
 app.use("/v1/file", fileRouter);
 app.use("/v1/permission", permissionRouter);
