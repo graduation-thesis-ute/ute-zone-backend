@@ -2,7 +2,7 @@ import { MongoClient } from "mongodb";
 import "dotenv/config.js";
 import { ChatOpenAI } from "@langchain/openai";
 import { SystemMessage, HumanMessage } from "@langchain/core/messages";
-import { HuggingFaceTransformersEmbeddings } from "@langchain/community/embeddings/hf_transformers";
+import { HuggingFaceTransformersEmbeddings } from "@langchain/community/embeddings/huggingface_transformers";
 
 const client = new MongoClient(process.env.MONGODB_URI);
 const model = new ChatOpenAI({
