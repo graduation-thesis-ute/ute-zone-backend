@@ -18,8 +18,8 @@ async function processPDFAndStoreVector(buffer) {
   const text = data.text;
 
   const splitter = new RecursiveCharacterTextSplitter({
-    chunkSize: 1000,
-    chunkOverlap: 200,
+    chunkSize: 500,
+    chunkOverlap: 50,
   });
   const docs = await splitter.createDocuments([text]);
   console.log(`Split into ${docs.length} chunks`);

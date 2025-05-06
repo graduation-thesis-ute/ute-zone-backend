@@ -27,7 +27,7 @@ import { Server } from "socket.io";
 import path from "path";
 import { fileURLToPath } from "url";
 import { setupSocketHandlers } from "./utils/utils.js";
-import { statisticRouter } from "./routes/StatisticRouter.js";
+import { statisticRouter } from "./routes/statisticRouter.js";
 import { settingRouter } from "./routes/settingRouter.js";
 import { chatbotRouter } from "./routes/chatbotRouter.js";
 import "./configurations/googleConfig.js";
