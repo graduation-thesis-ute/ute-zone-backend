@@ -5,13 +5,15 @@
   "type": "module",
   "main": "index.js",
   "scripts": {
-    "start": "nodemon src/index.js"
+    "start": "node src/index.js",
+    "dev": "nodemon src/index.js"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "dependencies": {
     "@huggingface/inference": "^2.8.1",
+    "@huggingface/transformers": "^3.5.1",
     "@langchain/community": "^0.3.42",
     "@langchain/core": "^0.3.47",
     "@langchain/langgraph": "^0.2.66",

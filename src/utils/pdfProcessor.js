@@ -2,7 +2,7 @@ import pdfParse from "pdf-parse";
 import "dotenv/config.js";
 import { RecursiveCharacterTextSplitter } from "langchain/text_splitter";
 // import { OpenAIEmbeddings } from "@langchain/openai";
-import { HuggingFaceTransformersEmbeddings } from "@langchain/community/embeddings/hf_transformers";
+import { HuggingFaceTransformersEmbeddings } from "@langchain/community/embeddings/huggingface_transformers";
 import { MongoClient } from "mongodb";
 
 const client = new MongoClient(process.env.MONGODB_URI);
