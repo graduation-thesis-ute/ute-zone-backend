@@ -161,6 +161,7 @@ const createMessage = async (
     { lastReadMessage: message._id }
   );
   io.to(getConversation._id.toString()).emit("CREATE_MESSAGE", message._id);
+  console.log("CREATE_MESSAGE event emitted (socket):", message._id);
   const members = await ConversationMember.find({
     conversation: getConversation._id,
   }).populate({

@@ -30,15 +30,31 @@ router.post("/search", async (req, res) => {
   }
 });
 
-router.post("/chat", async (req, res) => {
+// router.post("/chat", async (req, res) => {
+//   try {
+//     const { question } = req.body;
+//     // Implement chatbot logic here
+//     const docs = await getAnswerFromDocuments(question);
+//     res.json({ results: docs });
+//   } catch (err) {
+//     console.error(err);
+//     res.status(500).json({ error: "Chat failed" });
+//   }
+// });
+
+router.get("/chat", async (req, res) => {
+  const { question } = req.query; // Lấy question từ query string
+  if (!question) {
+    res.status(400).json({ error: "Missing question parameter" });
+    return;
+  }
+
   try {
-    const { question } = req.body;
-    // Implement chatbot logic here
-    const docs = await getAnswerFromDocuments(question);
-    res.json({ results: docs });
+    await getAnswerFromDocuments(question, res); // Gọi hàm streaming
   } catch (err) {
     console.error(err);
-    res.status(500).json({ error: "Chat failed" });
+    res.write(`data: ${JSON.stringify({ error: "Chat failed" })}\n\n`);
+    res.end();
   }
 });
 
