@@ -1,5 +1,5 @@
 import mongoose from "mongoose";
-
+import { schemaOptions } from "../configurations/schemaConfig.js";
 const groupPostSchema = new mongoose.Schema(
   {
     group: {
@@ -24,14 +24,13 @@ const groupPostSchema = new mongoose.Schema(
       enum: [1, 2, 3], // 1: pending, 2: approved, 3: rejected 
       default: 1,
     },
-    createdAt: {
-      type: Date,
-      default: Date.now,
+    isUpdated: {
+      type: Number,
+      enum: [0, 1],
+      default: 0,
     },
   },
-  {
-    timestamps: true,
-  }
+  schemaOptions
 );
 
 const GroupPost = mongoose.model("GroupPost", groupPostSchema);

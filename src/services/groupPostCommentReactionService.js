@@ -1,26 +1,36 @@
 import GroupPostCommentReaction from "../models/groupPostCommentReactionModel.js";
 import { isValidObjectId } from "./apiService.js";
 
-const formatGroupPostCommentReactionData = (reaction) => {
+const formatGroupPostCommentReactionData = (groupPostCommentReaction) => {
   return {
-    id: reaction._id,
-    groupPostComment: reaction.groupPostComment,
-    user: reaction.user,
-    createdAt: reaction.createdAt,
-    updatedAt: reaction.updatedAt,
+    _id: groupPostCommentReaction._id,
+    groupPostComment: {
+      _id: groupPostCommentReaction.groupPostComment._id,
+    },
+    user: {
+      _id: groupPostCommentReaction.user._id,
+      displayName: groupPostCommentReaction.user.displayName,
+      avatarUrl: groupPostCommentReaction.user.avatarUrl,
+    },
+    reactionType: groupPostCommentReaction.reactionType,
   };
 };
 
-export const getListGroupPostCommentReactions = async (req) => {
+const getListGroupPostCommentReactions = async (req) => {
   try {
-    const { commentId, userId, page = 1, limit = 10 } = req.query;
+    const { 
+      groupPostComment, 
+      isPaged,
+      page = 0,
+      size = isPaged === "0" ? Number.MAX_SAFE_INTEGER : 10,
+    } = req.query;
     const query = {};
 
-    if (commentId) {
-      if (!isValidObjectId(commentId)) {
-        throw new Error("Invalid comment id");
+    if (groupPostComment) {
+      if (!isValidObjectId(groupPostComment)) {
+        throw new Error("Invalid group post comment id");
       }
-      query.groupPostComment = commentId;
+      query.groupPostComment = groupPostComment;
     }
 
     if (userId) {
@@ -40,12 +50,13 @@ export const getListGroupPostCommentReactions = async (req) => {
     const total = await GroupPostCommentReaction.countDocuments(query);
 
     return {
-      reactions: reactions.map(formatGroupPostCommentReactionData),
-      total,
-      page: parseInt(page),
-      totalPages: Math.ceil(total / limit),
+      content: reactions.map(formatGroupPostCommentReactionData),
+      totalPages,
+      totalElements,
     };
   } catch (error) {
     throw error;
   }
-}; 
+};  
+
+export { getListGroupPostCommentReactions };

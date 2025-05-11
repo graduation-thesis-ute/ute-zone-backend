@@ -1,5 +1,5 @@
 import mongoose from "mongoose";
-
+import { schemaOptions } from "../configurations/schemaConfig.js";
 const groupPostCommentSchema = new mongoose.Schema(
   {
     groupPost: {
@@ -18,15 +18,15 @@ const groupPostCommentSchema = new mongoose.Schema(
     },
     imageUrl: {
       type: String,
+      default: null,
     },
     parent: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "GroupPostComment",
+      default: null,
     },
   },
-  {
-    timestamps: true,
-  }
+  schemaOptions
 );
 
 const GroupPostComment = mongoose.model("GroupPostComment", groupPostCommentSchema);
