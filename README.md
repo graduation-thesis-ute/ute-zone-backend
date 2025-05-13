@@ -1,4 +1,4 @@
-# community-social-network-backend
+# ute-zone-backend
 
 ## Git Commit Message Guidelines
 
