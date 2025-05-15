@@ -26,7 +26,7 @@ async function processPDFAndStoreVector(buffer) {
 
   const collection = client
     .db(process.env.DB_NAME)
-    .collection(process.env.DB_COLLECTION);
+    .collection(process.env.DB_COLLECTION_VECTOR_SEARCH);
 
   console.log("Inserting vectors into MongoDB...", collection);
 
