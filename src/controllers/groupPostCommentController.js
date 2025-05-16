@@ -13,6 +13,7 @@ import {
     formatGroupPostCommentData,
     getListGroupPostComments,
 } from "../services/groupPostCommentService.js";
+import Notification from "../models/notificationModel.js";
 
 const createComment = async (req, res) => {
     try {
@@ -33,12 +34,16 @@ const createComment = async (req, res) => {
             return makeErrorResponse({ res, message: "Invalid form", data: errors });
         }
 
-        const group = await Group.findById(groupPost.group);
+        const getPost = await GroupPost.findById(groupPost);
+        if (!getPost) {
+            return makeErrorResponse({ res, message: "Post not found" });
+        }
+        const group = await Group.findById(getPost.group);
         if (!group) {
             errors.push({ field: "group", message: "group not found" });
-        }   
+        }
         const groupMember = await GroupMember.findOne({
-            group: group._id,
+            group: getPost.group,
             user: req.user._id,
         });
         if (!groupMember) {
@@ -54,10 +59,6 @@ const createComment = async (req, res) => {
             if (!parentComment) {
                 errors.push({ field: "parent", message: "parent comment not found" });
             }
-        }
-        const getPost = await GroupPost.findById(groupPost);
-        if (!getPost) {
-            return makeErrorResponse({ res, message: "Post not found" });
         }
         const comment = await GroupPostComment.create({
             groupPost: getPost._id,
@@ -81,6 +82,7 @@ const createComment = async (req, res) => {
         if (!currentUser._id.equals(getPost.user._id)) {
             await Notification.create({
                 user: getPost.user._id,
+                message: "Bài viết của bạn có bình luận mới.",
                 data: {
                     type: "comment",    
                     groupPost: getPost._id,
@@ -150,15 +152,13 @@ const getComment = async (req, res) => {
 };          
 const getComments = async (req, res) => {       
     try {
-        const { id } = req.body;
-        if (!isValidObjectId(id)) {
-            return makeErrorResponse({ res, message: "Invalid id" });
-        }
-        const comments = await GroupPostComment.find({ groupPost: id });
-        const formattedComments = await Promise.all(comments.map(comment => formatGroupPostCommentData(comment, currentUser)));
-        return makeSuccessResponse({ res, message: "Comments fetched successfully", data: formattedComments });
+        const result = await getListGroupPostComments(req);
+       return makeSuccessResponse({
+        res,
+        data: result,
+       })
     } catch (error) {
-        return makeErrorResponse({ res, message: "Internal server error", data: error.message });
+        return makeErrorResponse({ res, message: error.message });
     }
 };
 

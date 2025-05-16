@@ -11,9 +11,9 @@ import { formatDistanceToNow } from "../configurations/schemaConfig.js";
 const formatGroupPostCommentData = async (comment, currentUser) => {
   comment.isOwner = comment.user._id.equals(currentUser._id) ? 1: 0;
   comment.isUpdated = comment.updatedAt.getTime() !== comment.createdAt.getTime() ? 1 : 0;
-  comment.isReacted = (await CommentReaction.exists({
+  comment.isReacted = (await GroupPostCommentReaction.exists({
     user: currentUser._id,
-    comment: comment._id,
+    groupPostComment: comment._id,
   })) ? 1 : 0;
   comment.isChildren = comment.parent ? 1 : 0;
   comment.totalChildren = await GroupPostComment.countDocuments({ parent: comment._id });
@@ -49,50 +49,67 @@ const formatGroupPostCommentData = async (comment, currentUser) => {
 };
 
 const getListGroupPostComments = async (req) => {
-  try {
-    const { postId, userId, parentId, page = 1, limit = 10 } = req.query;
-    const query = {};
+  const { 
+    content, 
+    groupPost, 
+    parent, 
+    page = 0, 
+    isPaged = "0",
+    ignoreChildren = "0",
+    size = isPaged === "0" ? Number.MAX_SAFE_INTEGER : 10,
+  } = req.query;
+  const currentUser = req.user;
 
-    if (postId) {
-      if (!isValidObjectId(postId)) {
-        throw new Error("Invalid post id");
-      }
-      query.groupPost = postId;
+  const offset = parseInt(page, 10) * parseInt(size, 10);
+  const limit = parseInt(size, 10);
+
+  const query = {};
+
+  if (groupPost) {
+    if (!isValidObjectId(groupPost)) {
+      throw new Error("Invalid group post id");
     }
+    query.groupPost = groupPost;
+  }
 
-    if (userId) {
-      if (!isValidObjectId(userId)) {
-        throw new Error("Invalid user id");
-      }
-      query.user = userId;
+
+  if (parent) {
+    if (!isValidObjectId(parent)) {
+      throw new Error("Invalid parent comment id");
     }
+    query.parent = parent;
+  }
+  if (ignoreChildren === "1") {
+    query.parent = null;
+  }
+  if(content) {
+    query.content = { $regex: content, $options: "i" };
+  }
 
-    if (parentId) {
-      if (!isValidObjectId(parentId)) {
-        throw new Error("Invalid parent comment id");
-      }
-      query.parent = parentId;
-    }
-
-    const comments = await GroupPostComment.find(query)
+  const [totalElements, comments] = await Promise.all([
+    GroupPostComment.countDocuments(query),
+    GroupPostComment.find(query)
       .populate("groupPost", "content")
       .populate("user", "displayName avatarUrl")
       .populate("parent", "content")
-      .sort({ createdAt: -1 })
-      .skip((page - 1) * limit)
-      .limit(limit);
+      .sort(ignoreChildren === "1" ? { createdAt: -1 } : { createdAt: 1 })
+      .skip(offset)
+      .limit(limit),
+  ]);
 
-    const total = await GroupPostComment.countDocuments(query);
+  const totalPages = Math.ceil(totalElements / limit);
 
-    return {
-      comments: comments.map(formatGroupPostCommentData),
-      total,
-      page: parseInt(page),
-      totalPages: Math.ceil(total / limit),
-    };
-  } catch (error) {
-    throw error;
-  }
+  const result = await Promise.all(
+    comments.map(async (comment) => {
+      return await formatGroupPostCommentData(comment, currentUser);
+    })
+  );
+
+  return {
+    content: result,
+    totalPages,
+    totalElements,
+  };
 }; 
 
 export { formatGroupPostCommentData, getListGroupPostComments };

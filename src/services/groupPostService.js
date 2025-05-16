@@ -3,7 +3,8 @@ import GroupMember from "../models/groupMemberModel.js";
 import GroupPost from "../models/groupPostModel.js";
 import Group from "../models/groupModel.js";
 import { isValidObjectId } from "mongoose";
-
+import GroupPostComment from "../models/groupPostCommentModel.js";
+import GroupPostReaction from "../models/groupPostReactionModel.js";
 const formatGroupPostData = async (groupPost, currentUser) => {
   const groupMember = await GroupMember.findOne({
     group: groupPost.group,
@@ -14,6 +15,14 @@ const formatGroupPostData = async (groupPost, currentUser) => {
   }
   groupPost.isOwner = groupPost.user._id.equals(currentUser._id) ? 1 : 0;
   const group = await Group.findById(groupPost.group);
+  const comments = await GroupPostComment.find({ groupPost: groupPost._id });
+  const reactions = await GroupPostReaction.find({ groupPost: groupPost._id });
+  groupPost.totalComments = comments.length;
+  groupPost.totalReactions = reactions.length;
+  groupPost.isReacted = (await GroupPostReaction.exists({
+    user: currentUser._id,
+    groupPost: groupPost._id,
+  }))? 1 : 0;
   return {
       id: groupPost._id,
       group:{
@@ -30,6 +39,9 @@ const formatGroupPostData = async (groupPost, currentUser) => {
       imageUrls: groupPost.imageUrls,
       status: groupPost.status,
       isOwner: groupPost.isOwner,
+      totalComments: groupPost.totalComments,
+      totalReactions: groupPost.totalReactions,
+      isReacted: groupPost.isReacted,
       createdAt: groupPost.createdAt,
       updatedAt: groupPost.updatedAt
   };
