@@ -146,4 +146,25 @@ router.get("/test-create", async (req, res) => {
   }
 });
 
+// Xóa một cuộc trò chuyện
+router.delete("/conversation/:conversationId", auth(), async (req, res) => {
+  const { conversationId } = req.params;
+  const userId = req.user._id.toString();
+  try {
+    const result = await ChatbotConversation.findOneAndDelete({
+      userId,
+      conversationId,
+    });
+
+    if (!result) {
+      return res.status(404).json({ error: "Không tìm thấy cuộc trò chuyện" });
+    }
+
+    res.json({ message: "Xóa cuộc trò chuyện thành công" });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: "Lỗi khi xóa cuộc trò chuyện" });
+  }
+});
+
 export { router as chatbotRouter };
