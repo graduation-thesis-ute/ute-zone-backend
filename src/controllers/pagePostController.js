@@ -3,6 +3,7 @@ import Notification from "../models/notificationModel.js";
 import PagePost from "../models/pagePostModel.js";
 import PageMember from "../models/pageMemberModel.js";
 import Page from "../models/pageModel.js";
+import ModerationSetting from "../models/moderationSettingModel.js";
 import {
   deleteFileByUrl,
   isValidUrl,
@@ -10,6 +11,7 @@ import {
   makeSuccessResponse,
 } from "../services/apiService.js";
 import { formatPagePostData, getListPagePosts } from "../services/pagePostService.js";
+import { moderatePostContent } from "../services/contentModerationService.js";
 
 // Controller for creating a page post
 const createPost = async (req, res) => {
@@ -21,6 +23,7 @@ const createPost = async (req, res) => {
     if (!pageMember || ![1, 2].includes(pageMember.role)) {
       return makeErrorResponse({ res, message: "You do not have permission to create a post on this page" });
     }
+
     // Validate incoming data
     if (!kind || ![1, 2, 3].includes(kind)) {
       errors.push({ field: "kind", message: "Invalid post kind" });
@@ -38,13 +41,72 @@ const createPost = async (req, res) => {
       imageUrls?.map((url) => (isValidUrl(url) ? url : null)).filter(Boolean) ||
       [];
     
+    // Kiểm tra nội dung trước khi tạo post
+    const moderationResult = await moderatePostContent({
+      content,
+      imageUrls: validImageUrls
+    });
+
+    if (!moderationResult.isSafe) {
+      return makeErrorResponse({ 
+        res, 
+        message: "Content contains inappropriate material", 
+        data: {
+          flaggedCategories: moderationResult.flaggedCategories,
+          details: {
+            textAnalysis: moderationResult.textAnalysis,
+            imageAnalysis: moderationResult.imageAnalysis
+          }
+        }
+      });
+    }
+
+    // Lấy cài đặt duyệt bài cho page
+    const moderationSetting = await ModerationSetting.findOne({
+      entityType: 2, // PagePost
+      entityId: pageId
+    });
+
+    // Nếu chưa có cài đặt, tạo mặc định
+    if (!moderationSetting) {
+      await ModerationSetting.create({
+        entityType: 2,
+        entityId: pageId,
+        isAutoModerationEnabled: false,
+        isModerationRequired: true,
+        updatedBy: user._id
+      });
+    }
+
+    // Xác định trạng thái dựa vào cài đặt duyệt bài
+    let status = 1; // Mặc định là pending
+    let autoModeration = false;
+
+    if (moderationSetting?.isModerationRequired) {
+      if (moderationSetting.isAutoModerationEnabled) {
+        // Nếu bật duyệt tự động, kiểm tra nội dung bằng AI
+        status = 2; // Approved
+        autoModeration = true;
+      } else {
+        // Nếu không bật duyệt tự động, chờ duyệt thủ công
+        status = 1; // Pending
+        autoModeration = false;
+      }
+    } else {
+      // Nếu không yêu cầu duyệt bài
+      status = 2; // Approved
+      autoModeration = false;
+    }
+
     const post = await PagePost.create({
       user: user._id,
       content,
       imageUrls: validImageUrls,
       page: pageId,
-      status: 1, // Assuming default post status is "public"
+      status,
       kind,
+      autoModeration,
+      moderationNote: autoModeration ? "Auto moderated by AI" : null
     });
 
     // Send notifications to friends
@@ -71,7 +133,13 @@ const createPost = async (req, res) => {
       await Notification.insertMany(allFriendNotifications);
     }
 
-    return makeSuccessResponse({ res, message: "Page post created successfully" });
+    return makeSuccessResponse({ 
+      res, 
+      message: status === 2 
+        ? (autoModeration ? "Page post created and auto approved" : "Page post created and approved") 
+        : "Page post created and pending approval",
+      data: { status, autoModeration }
+    });
   } catch (error) {
     return makeErrorResponse({ res, message: error.message });
   }
@@ -125,6 +193,33 @@ const updatePost = async (req, res) => {
     if (!pageMember || ![1, 2].includes(pageMember.role)) {
       return makeErrorResponse({ res, message: "You do not have permission to update this post on this page" });
     }
+
+    // Kiểm tra nội dung mới trước khi cập nhật
+    const validImageUrls = imageUrls
+      ? imageUrls
+          .map((imageUrl) => (isValidUrl(imageUrl) ? imageUrl : null))
+          .filter((url) => url !== null)
+      : [];
+
+    const moderationResult = await moderatePostContent({
+      content,
+      imageUrls: validImageUrls
+    });
+
+    if (!moderationResult.isSafe) {
+      return makeErrorResponse({ 
+        res, 
+        message: "Updated content contains inappropriate material", 
+        data: {
+          flaggedCategories: moderationResult.flaggedCategories,
+          details: {
+            textAnalysis: moderationResult.textAnalysis,
+            imageAnalysis: moderationResult.imageAnalysis
+          }
+        }
+      });
+    }
+
     // Handle image deletion
     const oldImageUrls = post.imageUrls || [];
     const imagesToDelete = oldImageUrls.filter(
@@ -139,11 +234,7 @@ const updatePost = async (req, res) => {
       kind,
       status: status || post.status,
       isUpdated: 1,
-      imageUrls: imageUrls
-        ? imageUrls
-            .map((imageUrl) => (isValidUrl(imageUrl) ? imageUrl : null))
-            .filter((url) => url !== null)
-        : [],
+      imageUrls: validImageUrls,
     });
 
     return makeSuccessResponse({ res, message: "Page post updated successfully" });
@@ -188,14 +279,17 @@ const changeStatusPost = async (req, res) => {
     if (!post) {
       return makeErrorResponse({ res, message: "Post not found" });
     }
+
     const pageMember = await PageMember.findOne({ page: post.page, user: req.user._id });
     if (!pageMember || ![1, 2].includes(pageMember.role)) {
       return makeErrorResponse({ res, message: "You do not have permission to change status this post on this page" });
     }
-    if (post.status !== 1) {
+
+    // Kiểm tra nếu bài viết đã được duyệt tự động
+    if (post.autoModeration && post.status === 2) {
       return makeErrorResponse({
         res,
-        message: "Not allowed to change this post status",
+        message: "This post was auto moderated and cannot be manually moderated",
       });
     }
 
@@ -213,7 +307,12 @@ const changeStatusPost = async (req, res) => {
       });
     }
 
-    await post.updateOne({ status });
+    await post.updateOne({ 
+      status,
+      moderationNote: status === 3 ? reason : "Manually moderated by admin",
+      autoModeration: false // Đánh dấu là đã được duyệt thủ công
+    });
+
     if (!post.user._id.equals(user._id)) {
       await Notification.create({
         user: post.user._id,
@@ -233,7 +332,11 @@ const changeStatusPost = async (req, res) => {
       });
     }
 
-    return makeSuccessResponse({ res, message: "Post status changed" });
+    return makeSuccessResponse({ 
+      res, 
+      message: "Post status changed",
+      data: { status, autoModeration: false }
+    });
   } catch (error) {
     return makeErrorResponse({ res, message: error.message });
   }

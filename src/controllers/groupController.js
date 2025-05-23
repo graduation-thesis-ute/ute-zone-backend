@@ -1,6 +1,7 @@
 import { formatGroupData, getListGroups } from "../services/groupService.js";
 import Group from "../models/groupModel.js";
 import GroupMember from "../models/groupMemberModel.js";
+import { createDefaultGroupModerationSetting } from "./moderationSettingController.js";
 import {
   deleteFileByUrl,
   isValidObjectId,
@@ -32,11 +33,17 @@ const createGroup = async (req, res) => {
       owner: currentUser._id,
       status: 2,
     });
+
+    // Create group member (owner)
     await GroupMember.create({
       group: group._id,
       user: currentUser._id,
       role: 1,
     });
+
+    // Tự động tạo cài đặt duyệt bài cho group mới
+    await createDefaultGroupModerationSetting(group._id, currentUser._id);
+
     return makeSuccessResponse({res, message: "Group created successfully", data: group});
   } catch (error) {
     return makeErrorResponse({res, message: error.message});

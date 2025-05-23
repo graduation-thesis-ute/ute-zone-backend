@@ -42,6 +42,7 @@ import { groupPostRouter } from "./routes/groupPostRouter.js";
 import { groupPostReactionRouter } from "./routes/groupPostReactionRouter.js";
 import { groupPostCommentRouter } from "./routes/groupPostCommentRouter.js";
 import { groupPostCommentReactionRouter } from "./routes/groupPostCommentReactionRouter.js";
+import { moderationSettingRouter } from "./routes/moderationSettingRouter.js";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const app = express();
@@ -84,6 +85,7 @@ app.use("/v1/group-post", groupPostRouter);
 app.use("/v1/group-post-reaction", groupPostReactionRouter);
 app.use("/v1/group-post-comment", groupPostCommentRouter);
 app.use("/v1/group-post-comment-reaction", groupPostCommentReactionRouter);
+app.use("/v1/moderation-settings", moderationSettingRouter);
 app.use(express.static(path.join(__dirname, "../public")));
 app.get("/", (req, res) => {
   res.sendFile(path.join(__dirname, "../public/index.html"));

@@ -2,6 +2,7 @@ import Page from "../models/pageModel.js";
 import Notification from "../models/notificationModel.js";
 import PageMember from "../models/pageMemberModel.js";
 import PageFollower from "../models/pageFollowerModel.js";
+import { createDefaultPageModerationSetting } from "./moderationSettingController.js";
 import {
     deleteFileByUrl,
     isValidUrl,
@@ -49,6 +50,9 @@ const createPage = async (req, res) => {
             page: page._id,
             user: user._id,
         });
+
+        // Tự động tạo cài đặt duyệt bài cho page mới
+        await createDefaultPageModerationSetting(page._id, user._id);
 
         return makeSuccessResponse({
             res,
