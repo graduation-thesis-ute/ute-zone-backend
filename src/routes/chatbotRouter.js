@@ -6,20 +6,124 @@ import {
   getAnswerFromDocuments,
 } from "../utils/vectorSearch.js";
 import { saveMessage, saveMemory } from "../utils/vectorSearch.js";
-import ChatbotMemory from "../models/chatbotMemoryModel.js";
 import ChatbotConversation from "../models/chatbotConversationModel.js";
+import DocumentModel from "../models/documentChatBotModel.js";
 import auth from "../middlewares/authentication.js";
+import { MongoClient, ObjectId } from "mongodb";
 
 const router = express.Router();
 const upload = multer({ storage: multer.memoryStorage() });
+const client = new MongoClient(process.env.MONGODB_URI);
 
-router.post("/upload", upload.single("file"), async (req, res) => {
+// router.post("/upload", upload.single("file"), async (req, res) => {
+//   try {
+//     await processPDFAndStoreVector(req.file.buffer);
+//     res.json({ message: "PDF uploaded and vector stored successfully." });
+//   } catch (err) {
+//     console.error(err);
+//     res.status(500).json({ error: "Upload failed" });
+//   }
+// });
+
+router.post("/documents", auth(), upload.single("file"), async (req, res) => {
   try {
-    await processPDFAndStoreVector(req.file.buffer);
-    res.json({ message: "PDF uploaded and vector stored successfully." });
+    if (!req.file) {
+      return res.status(400).json({ error: "No file uploaded" });
+    }
+
+    const { title } = req.body;
+    if (!title) {
+      return res.status(400).json({ error: "Title is required" });
+    }
+    const metadata = await processPDFAndStoreVector(
+      req.file.buffer,
+      req.file.originalname,
+      title
+    );
+    res.json({
+      message: "PDF uploaded and vector stored successfully",
+      metadata,
+    });
   } catch (err) {
     console.error(err);
-    res.status(500).json({ error: "Upload failed" });
+    res.status(500).json({ error: "Upload failed: " + err.message });
+  }
+});
+
+// Get all documents (admin only)
+router.get("/documents", auth(), async (req, res) => {
+  try {
+    const { page = 0, size = 10, name } = req.query;
+    const skip = parseInt(page) * parseInt(size);
+    const limit = parseInt(size);
+
+    // Build query
+    const query = {};
+    if (name) {
+      query.title = { $regex: name, $options: "i" }; // Case-insensitive search
+    }
+
+    // Get total count for pagination
+    const total = await DocumentModel.countDocuments(query);
+    const totalPages = Math.ceil(total / limit);
+
+    // Get paginated documents
+    const documents = await DocumentModel.find(query)
+      .sort({ createdAt: -1 }) // Sort by newest first
+      .skip(skip)
+      .limit(limit)
+      .select("title createdAt updatedAt vectorIds"); // Select only needed fields
+
+    // Transform data to match frontend expectations
+    const transformedDocuments = documents.map((doc) => ({
+      id: doc._id,
+      name: doc.title,
+      type: doc.title.split(".").pop()?.toUpperCase() || "PDF", // Get file extension as type
+      size: 0, // Since we don't store file size, default to 0
+      createdAt: doc.createdAt,
+      updatedAt: doc.updatedAt,
+    }));
+
+    res.json({
+      content: transformedDocuments,
+      totalPages,
+      totalElements: total,
+      currentPage: parseInt(page),
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to fetch documents" });
+  }
+});
+
+// Delete document (admin only)
+router.delete("/documents/:id", auth(), async (req, res) => {
+  const { id } = req.params;
+  try {
+    const existingDoc = await DocumentModel.findById(id);
+    if (!existingDoc) {
+      return res.status(404).json({ error: "Document not found" });
+    }
+
+    await client.connect();
+    const vectorCollection = client
+      .db(process.env.DB_NAME)
+      .collection(process.env.DB_COLLECTION_VECTOR_SEARCH);
+
+    // Xóa các vector liên quan
+    await vectorCollection.deleteMany({
+      _id: { $in: existingDoc.vectorIds.map((id) => new ObjectId(id)) },
+    });
+
+    // Xóa metadata
+    await DocumentModel.findByIdAndDelete(id);
+
+    res.json({ message: "Document deleted successfully" });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Delete failed: " + err.message });
+  } finally {
+    await client.close();
   }
 });
 
@@ -132,6 +236,7 @@ router.get("/conversation", auth(), async (req, res) => {
     const history = await getConversationHistory(userId);
     res.json(history);
   } catch (error) {
+    console.error(error);
     res.status(500).json({ error: "Lỗi khi lấy lịch sử trò chuyện" });
   }
 });
