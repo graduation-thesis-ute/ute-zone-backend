@@ -72,13 +72,13 @@ router.get("/documents", auth(), async (req, res) => {
       .sort({ createdAt: -1 }) // Sort by newest first
       .skip(skip)
       .limit(limit)
-      .select("title createdAt updatedAt vectorIds"); // Select only needed fields
+      .select("title createdAt updatedAt vectorIds filename"); // Added filename field
 
     // Transform data to match frontend expectations
     const transformedDocuments = documents.map((doc) => ({
       id: doc._id,
       name: doc.title,
-      type: doc.title.split(".").pop()?.toUpperCase() || "PDF", // Get file extension as type
+      type: doc.filename || "Unknown", // Use actual filename or "Unknown" if not available
       size: 0, // Since we don't store file size, default to 0
       createdAt: doc.createdAt,
       updatedAt: doc.updatedAt,
