@@ -7,7 +7,7 @@ import { makeErrorResponse, makeSuccessResponse } from "../services/apiService.j
 
 // Kiểm tra quyền admin cho cài đặt toàn cục (Post)
 const checkGlobalModerationPermission = async (user) => {
-  if (user.role !== 1) {
+  if (user.isSuperAdmin !== 1) {
     throw new Error("Only system admin can update global post moderation settings");
   }
 };
@@ -18,7 +18,7 @@ const checkEntityModerationPermission = async (entityType, entityId, userId) => 
     const pageMember = await PageMember.findOne({ 
       page: entityId, 
       user: userId,
-      role: 1 // Chỉ admin page mới được cập nhật
+      // role: 3 // Chỉ admin page mới được cập nhật
     });
     if (!pageMember) {
       throw new Error("You do not have permission to update page moderation settings");
@@ -128,8 +128,8 @@ const getPageModerationSetting = async (req, res) => {
 // Cập nhật cài đặt duyệt bài cho page
 const updatePageModerationSetting = async (req, res) => {
   try {
-    const { pageId } = req.params;
-    const { isAutoModerationEnabled, isModerationRequired } = req.body;
+   // const { pageId } = req.params;
+    const { isAutoModerationEnabled, isModerationRequired , pageId} = req.body;
 
     await checkEntityModerationPermission(2, pageId, req.user._id);
 

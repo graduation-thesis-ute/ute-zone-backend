@@ -12,66 +12,229 @@ import {
   validatePostsPerDay,
   getValidPostStatus,
 } from "../services/settingService.js";
+import ModerationSetting from "../models/moderationSettingModel.js";
+import { moderatePostContent } from "../services/contentModerationService.js";
 
 const createPost = async (req, res) => {
-  console.log("User in request:", req.user);
   try {
     const { content, imageUrls, kind } = req.body;
-    const errors = [];
+    const userId = req.user.id;
+
+    // Validate input data
     if (!kind || ![1, 2, 3].includes(kind)) {
-      errors.push({ field: "kind", message: "Invalid post kind" });
-    }
-    if (!content || !content.trim()) {
-      errors.push({ field: "content", message: "content cannot be null" });
-    }
-    if (errors.length > 0) {
-      return makeErrorResponse({ res, message: "Invalid form", data: errors });
-    }
-    const { user } = req;
-    const isAllowed = await validatePostsPerDay(user);
-    if (!isAllowed) {
-      return makeErrorResponse({
-        res,
-        message: "Bạn đã đăng đủ bài viết cho hôm nay",
+      return res.status(400).json({
+        result: false,
+        message: "Loại bài viết không hợp lệ",
+        data: null
       });
     }
-    const validImageUrls =
-      imageUrls?.map((url) => (isValidUrl(url) ? url : null)).filter(Boolean) ||
-      [];
-    const newStatus = await getValidPostStatus(kind, user.role.kind);
-    const post = await Post.create({
-      user: user._id,
-      content,
-      imageUrls: validImageUrls,
-      status: newStatus,
-      kind,
-    });
-    const friendships = await Friendship.find({
-      $or: [{ sender: user._id }, { receiver: user._id }],
-      status: 2,
-    });
-    const allFriendNotifications = friendships.map((friendship) => {
-      const friendId = friendship.sender.equals(user._id)
-        ? friendship.receiver
-        : friendship.sender;
-      return {
-        user: friendId,
-        data: {
-          user: { _id: user._id },
-          post: { _id: post._id },
-        },
-        message: `${user.displayName} đã đăng bài viết mới`,
-      };
-    });
-    if (allFriendNotifications.length > 0) {
-      await Notification.insertMany(allFriendNotifications);
+
+    if (!content || content.trim() === "") {
+      return res.status(400).json({
+        result: false,
+        message: "Nội dung bài viết không được để trống",
+        data: null
+      });
     }
-    return makeSuccessResponse({
-      res,
-      message: "Create post success",
+
+    // Kiểm tra số lượng bài viết mỗi ngày
+    const isAllowed = await validatePostsPerDay(req.user);
+    if (!isAllowed) {
+      return res.status(400).json({
+        result: false,
+        message: "Bạn đã đăng đủ số bài viết cho phép trong ngày",
+        data: null
+      });
+    }
+
+    // Kiểm tra nội dung
+    let moderationResult;
+    try {
+      moderationResult = await moderatePostContent({ content, imageUrls });
+      // Log kết quả kiểm duyệt chi tiết
+      console.log('Moderation result:', JSON.stringify(moderationResult, null, 2));
+    } catch (error) {
+      // Xử lý lỗi quota OpenAI
+      if (error.message.includes('429') || error.message.includes('quota')) {
+        console.log('OpenAI API quota exceeded, falling back to manual moderation');
+        // Lấy cài đặt duyệt nội dung toàn cục
+        const globalSetting = await ModerationSetting.findOne({ entityType: 1 }); // 1 = global setting
+        
+        let post;
+        let message;
+
+        // Nếu không có cài đặt hoặc yêu cầu duyệt, tạo bài viết với trạng thái pending
+        if (!globalSetting || globalSetting.isModerationRequired) {
+          post = await Post.create({
+            user: userId,
+            content,
+            imageUrls: imageUrls || [],
+            kind,
+            status: 1, // Pending
+          });
+          message = "Bài viết đã được tạo và đang chờ duyệt (hệ thống kiểm tra nội dung tạm thời không khả dụng)";
+        } else {
+          // Nếu không yêu cầu duyệt, tạo bài viết với trạng thái approved
+          post = await Post.create({
+            user: userId,
+            content,
+            imageUrls: imageUrls || [],
+            kind,
+            status: 2, // Approved
+          });
+          message = "Bài viết đã được tạo thành công (hệ thống kiểm tra nội dung tạm thời không khả dụng)";
+        }
+
+        // Gửi thông báo cho bạn bè
+        try {
+          const friendships = await Friendship.find({
+            $or: [{ sender: userId }, { receiver: userId }],
+            status: 2, // Đã là bạn
+          });
+
+          const notifications = friendships.map(friendship => {
+            const friendId = friendship.sender.equals(userId)
+              ? friendship.receiver
+              : friendship.sender;
+            return {
+              user: friendId,
+              data: {
+                user: { _id: userId },
+                post: { _id: post._id },
+              },
+              message: `${req.user.displayName} đã đăng bài viết mới`,
+              kind: 1, // Thông báo bài viết mới
+            };
+          });
+
+          if (notifications.length > 0) {
+            await Notification.insertMany(notifications);
+          }
+        } catch (notifyError) {
+          console.error("Error sending notifications:", notifyError);
+          // Không ảnh hưởng đến kết quả tạo bài viết
+        }
+
+        return res.status(201).json({
+          result: true,
+          message,
+          data: {
+            status: post.status
+          }
+        });
+      }
+      // Nếu là lỗi khác, throw để xử lý ở catch block bên ngoài
+      throw error;
+    }
+
+    // Nếu nội dung không an toàn
+    if (!moderationResult.isSafe) {
+      console.log('Blocked post due to moderation:', {
+        content,
+        flaggedCategories: moderationResult.flaggedCategories,
+        confidence: moderationResult.confidence,
+        rawResponse: moderationResult.rawResponse
+      });
+      return res.status(400).json({
+        result: false,
+        message: "Nội dung bài viết vi phạm quy định",
+        data: {
+          flaggedCategories: moderationResult.flaggedCategories,
+          analysis: {
+            text: moderationResult.textAnalysis,
+            images: moderationResult.imageAnalysis
+          },
+          confidence: moderationResult.confidence,
+          rawResponse: moderationResult.rawResponse
+        }
+      });
+    }
+
+    // Lấy cài đặt duyệt nội dung toàn cục
+    const globalSetting = await ModerationSetting.findOne({ entityType: 1 }); // 1 = global setting
+    
+    let post;
+    let message;
+
+    // Nếu không có cài đặt hoặc yêu cầu duyệt
+    if (!globalSetting || globalSetting.isModerationRequired) {
+      // Nếu bật tự động duyệt và nội dung an toàn
+      if (globalSetting?.isAutoModerationEnabled) {
+        post = await Post.create({
+          user: userId,
+          content,
+          imageUrls: imageUrls || [],
+          kind,
+          status: 2, // Approved
+        });
+        message = "Bài viết đã được tạo và tự động duyệt thành công";
+      } else {
+        post = await Post.create({
+          user: userId,
+          content,
+          imageUrls: imageUrls || [],
+          kind,
+          status: 1, // Pending
+        });
+        message = "Bài viết đã được tạo và đang chờ duyệt";
+      }
+    } else {
+      // Nếu không yêu cầu duyệt
+      post = await Post.create({
+        user: userId,
+        content,
+        imageUrls: imageUrls || [],
+        kind,
+        status: 2, // Approved
+      });
+      message = "Bài viết đã được tạo thành công";
+    }
+
+    // Gửi thông báo cho bạn bè
+    try {
+      const friendships = await Friendship.find({
+        $or: [{ sender: userId }, { receiver: userId }],
+        status: 2, // Đã là bạn
+      });
+
+      const notifications = friendships.map(friendship => {
+        const friendId = friendship.sender.equals(userId)
+          ? friendship.receiver
+          : friendship.sender;
+        return {
+          user: friendId,
+          data: {
+            user: { _id: userId },
+            post: { _id: post._id },
+          },
+          message: `${req.user.displayName} đã đăng bài viết mới`,
+          kind: 1, // Thông báo bài viết mới
+        };
+      });
+
+      if (notifications.length > 0) {
+        await Notification.insertMany(notifications);
+      }
+    } catch (notifyError) {
+      console.error("Error sending notifications:", notifyError);
+      // Không ảnh hưởng đến kết quả tạo bài viết
+    }
+
+    return res.status(201).json({
+      result: true,
+      message,
+      data: {
+        status: post.status
+      }
     });
+
   } catch (error) {
-    return makeErrorResponse({ res, message: error.message });
+    console.error("Error during post creation:", error);
+    return res.status(500).json({
+      result: false,
+      message: "Lỗi server khi tạo bài viết: " + error.message,
+      data: null
+    });
   }
 };
 

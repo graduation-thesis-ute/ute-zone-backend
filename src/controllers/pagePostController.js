@@ -37,66 +37,54 @@ const createPost = async (req, res) => {
 
     const { user } = req;
 
-    const validImageUrls =
-      imageUrls?.map((url) => (isValidUrl(url) ? url : null)).filter(Boolean) ||
-      [];
-    
-    // Kiểm tra nội dung trước khi tạo post
-    const moderationResult = await moderatePostContent({
-      content,
-      imageUrls: validImageUrls
-    });
-
-    if (!moderationResult.isSafe) {
-      return makeErrorResponse({ 
-        res, 
-        message: "Content contains inappropriate material", 
-        data: {
-          flaggedCategories: moderationResult.flaggedCategories,
-          details: {
-            textAnalysis: moderationResult.textAnalysis,
-            imageAnalysis: moderationResult.imageAnalysis
-          }
-        }
-      });
-    }
-
     // Lấy cài đặt duyệt bài cho page
     const moderationSetting = await ModerationSetting.findOne({
-      entityType: 2, // PagePost
+      entityType: 2, // Page
       entityId: pageId
     });
 
-    // Nếu chưa có cài đặt, tạo mặc định
-    if (!moderationSetting) {
-      await ModerationSetting.create({
-        entityType: 2,
-        entityId: pageId,
-        isAutoModerationEnabled: false,
-        isModerationRequired: true,
-        updatedBy: user._id
-      });
-    }
-
-    // Xác định trạng thái dựa vào cài đặt duyệt bài
     let status = 1; // Mặc định là pending
-    let autoModeration = false;
+    let message = "Bài viết đã được tạo và đang chờ duyệt";
 
-    if (moderationSetting?.isModerationRequired) {
-      if (moderationSetting.isAutoModerationEnabled) {
-        // Nếu bật duyệt tự động, kiểm tra nội dung bằng AI
+    // Kiểm tra nội dung nếu bật duyệt tự động
+    if (moderationSetting?.isModerationRequired && moderationSetting.isAutoModerationEnabled) {
+      try {
+        const moderationResult = await moderatePostContent({
+          content,
+          imageUrls: imageUrls || []
+        });
+
+        if (!moderationResult.isSafe) {
+          return makeErrorResponse({ 
+            res, 
+            message: "Nội dung bài viết vi phạm quy định", 
+            data: {
+              flaggedCategories: moderationResult.flaggedCategories,
+              details: {
+                textAnalysis: moderationResult.textAnalysis,
+                imageAnalysis: moderationResult.imageAnalysis
+              }
+            }
+          });
+        }
+        // Nếu nội dung an toàn và bật duyệt tự động
         status = 2; // Approved
-        autoModeration = true;
-      } else {
-        // Nếu không bật duyệt tự động, chờ duyệt thủ công
+        message = "Bài viết đã được tạo và tự động duyệt thành công";
+      } catch (error) {
+        // Nếu có lỗi khi kiểm tra nội dung, chuyển sang chờ duyệt thủ công
+        console.error("Error during content moderation:", error.message);
         status = 1; // Pending
-        autoModeration = false;
+        message = "Bài viết đã được tạo và đang chờ duyệt (hệ thống kiểm tra nội dung tạm thời không khả dụng)";
       }
-    } else {
+    } else if (!moderationSetting?.isModerationRequired) {
       // Nếu không yêu cầu duyệt bài
       status = 2; // Approved
-      autoModeration = false;
+      message = "Bài viết đã được tạo thành công";
     }
+
+    const validImageUrls =
+      imageUrls?.map((url) => (isValidUrl(url) ? url : null)).filter(Boolean) ||
+      [];
 
     const post = await PagePost.create({
       user: user._id,
@@ -105,8 +93,6 @@ const createPost = async (req, res) => {
       page: pageId,
       status,
       kind,
-      autoModeration,
-      moderationNote: autoModeration ? "Auto moderated by AI" : null
     });
 
     // Send notifications to friends
@@ -135,10 +121,8 @@ const createPost = async (req, res) => {
 
     return makeSuccessResponse({ 
       res, 
-      message: status === 2 
-        ? (autoModeration ? "Page post created and auto approved" : "Page post created and approved") 
-        : "Page post created and pending approval",
-      data: { status, autoModeration }
+      message,
+      data: { status }
     });
   } catch (error) {
     return makeErrorResponse({ res, message: error.message });

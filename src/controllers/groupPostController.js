@@ -4,6 +4,8 @@ import GroupMember from "../models/groupMemberModel.js";
 import { deleteFileByUrl, isValidUrl, makeErrorResponse, makeSuccessResponse } from "../services/apiService.js";
 import { isValidObjectId } from "mongoose";
 import { getListGroupPosts, formatGroupPostData } from "../services/groupPostService.js";
+import ModerationSetting from "../models/moderationSettingModel.js";
+import { moderatePostContent } from "../services/contentModerationService.js";
 
 const createGroupPost = async (req, res) => {
     try {
@@ -28,6 +30,52 @@ const createGroupPost = async (req, res) => {
         }
 
         const { user } = req;
+
+        // Lấy cài đặt duyệt bài cho group
+        const moderationSetting = await ModerationSetting.findOne({
+            entityType: 3, // Group
+            entityId: groupId
+        });
+
+        let status = 1; // Mặc định là pending
+        let message = "Bài viết đã được tạo và đang chờ duyệt";
+
+        // Kiểm tra nội dung nếu bật duyệt tự động
+        if (moderationSetting?.isModerationRequired && moderationSetting.isAutoModerationEnabled) {
+            try {
+                const moderationResult = await moderatePostContent({
+                    content,
+                    imageUrls: imageUrls || []
+                });
+
+                if (!moderationResult.isSafe) {
+                    return makeErrorResponse({ 
+                        res, 
+                        message: "Nội dung bài viết vi phạm quy định", 
+                        data: {
+                            flaggedCategories: moderationResult.flaggedCategories,
+                            details: {
+                                textAnalysis: moderationResult.textAnalysis,
+                                imageAnalysis: moderationResult.imageAnalysis
+                            }
+                        }
+                    });
+                }
+                // Nếu nội dung an toàn và bật duyệt tự động
+                status = 2; // Approved
+                message = "Bài viết đã được tạo và tự động duyệt thành công";
+            } catch (error) {
+                // Nếu có lỗi khi kiểm tra nội dung, chuyển sang chờ duyệt thủ công
+                console.error("Error during content moderation:", error.message);
+                status = 1; // Pending
+                message = "Bài viết đã được tạo và đang chờ duyệt (hệ thống kiểm tra nội dung tạm thời không khả dụng)";
+            }
+        } else if (!moderationSetting?.isModerationRequired) {
+            // Nếu không yêu cầu duyệt bài
+            status = 2; // Approved
+            message = "Bài viết đã được tạo thành công";
+        }
+
         const validImageUrls = imageUrls?.map((url) => (isValidUrl(url) ? url : null)).filter(Boolean) || [];
 
         const post = await GroupPost.create({
@@ -35,10 +83,14 @@ const createGroupPost = async (req, res) => {
             user: user._id,
             content,
             imageUrls: validImageUrls,
-            status: groupMember.role === 3 ? 1 : 2 // 2: Approved, 1: Pending
+            status
         });
 
-        return makeSuccessResponse({ res, message: "Post created successfully" });
+        return makeSuccessResponse({ 
+            res, 
+            message,
+            data: { status }
+        });
     } catch (error) {
         return makeErrorResponse({ res, message: error.message });
     }

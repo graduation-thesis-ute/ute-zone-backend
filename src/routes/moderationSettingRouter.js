@@ -20,8 +20,8 @@ router.get("/", auth("MOD_SETTING"), getModerationSetting);
 router.put("/", auth("MOD_SETTING"), updateModerationSetting);
 
 // Routes cho page
-router.get("/page/:pageId", auth("MOD_SETTING"), getPageModerationSetting);
-router.put("/page/:pageId", auth("MOD_SETTING"), updatePageModerationSetting);
+router.get("/page/:pageId", auth("MOD_SETTING_PAGE"), getPageModerationSetting);
+router.put("/page", auth("MOD_SETTING_PAGE"), updatePageModerationSetting);
 
 // Routes cho group
 router.get("/group/:groupId", auth("MOD_SETTING"), getGroupModerationSetting);
