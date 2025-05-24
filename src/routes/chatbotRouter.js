@@ -8,6 +8,7 @@ import {
 import { saveMessage, saveMemory } from "../utils/vectorSearch.js";
 import ChatbotConversation from "../models/chatbotConversationModel.js";
 import DocumentModel from "../models/documentChatBotModel.js";
+import ChatbotSuggestion from "../models/chatbotSuggestionModel.js";
 import auth from "../middlewares/authentication.js";
 import { MongoClient, ObjectId } from "mongodb";
 
@@ -269,6 +270,109 @@ router.delete("/conversation/:conversationId", auth(), async (req, res) => {
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: "Lỗi khi xóa cuộc trò chuyện" });
+  }
+});
+
+// Get all suggestions (admin only)
+router.get("/suggestions", auth(), async (req, res) => {
+  try {
+    const { page = 0, size = 10 } = req.query;
+    const skip = parseInt(page) * parseInt(size);
+    const limit = parseInt(size);
+
+    // Get total count for pagination
+    const total = await ChatbotSuggestion.countDocuments();
+    const totalPages = Math.ceil(total / limit);
+
+    // Get paginated suggestions
+    const suggestions = await ChatbotSuggestion.find()
+      .sort({ order: 1, createdAt: -1 })
+      .skip(skip)
+      .limit(limit);
+
+    res.json({
+      content: suggestions,
+      totalPages,
+      totalElements: total,
+      currentPage: parseInt(page),
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to fetch suggestions" });
+  }
+});
+
+// Get active suggestions for chatbot
+router.get("/suggestions/active", async (req, res) => {
+  try {
+    const suggestions = await ChatbotSuggestion.find({ isActive: true })
+      .sort({ order: 1 })
+      .limit(4);
+    res.json(suggestions);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to fetch active suggestions" });
+  }
+});
+
+// Create new suggestion (admin only)
+router.post("/suggestions", auth(), async (req, res) => {
+  try {
+    const { icon, text, order } = req.body;
+    if (!icon || !text) {
+      return res.status(400).json({ error: "Icon and text are required" });
+    }
+
+    const suggestion = await ChatbotSuggestion.create({
+      icon,
+      text,
+      order: order || 0,
+    });
+
+    res.json(suggestion);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to create suggestion" });
+  }
+});
+
+// Update suggestion (admin only)
+router.put("/suggestions/:id", auth(), async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { icon, text, order, isActive } = req.body;
+
+    const suggestion = await ChatbotSuggestion.findByIdAndUpdate(
+      id,
+      { icon, text, order, isActive },
+      { new: true }
+    );
+
+    if (!suggestion) {
+      return res.status(404).json({ error: "Suggestion not found" });
+    }
+
+    res.json(suggestion);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to update suggestion" });
+  }
+});
+
+// Delete suggestion (admin only)
+router.delete("/suggestions/:id", auth(), async (req, res) => {
+  try {
+    const { id } = req.params;
+    const suggestion = await ChatbotSuggestion.findByIdAndDelete(id);
+
+    if (!suggestion) {
+      return res.status(404).json({ error: "Suggestion not found" });
+    }
+
+    res.json({ message: "Suggestion deleted successfully" });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to delete suggestion" });
   }
 });
 
