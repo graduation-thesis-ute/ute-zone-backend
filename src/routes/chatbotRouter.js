@@ -10,6 +10,7 @@ import ChatbotConversation from "../models/chatbotConversationModel.js";
 import DocumentModel from "../models/documentChatBotModel.js";
 import ChatbotSuggestion from "../models/chatbotSuggestionModel.js";
 import auth from "../middlewares/authentication.js";
+import { getChatbotStats } from "../controllers/chatbotController.js";
 import { MongoClient, ObjectId } from "mongodb";
 
 const router = express.Router();
@@ -375,5 +376,7 @@ router.delete("/suggestions/:id", auth(), async (req, res) => {
     res.status(500).json({ error: "Failed to delete suggestion" });
   }
 });
+
+router.get("/stats", auth(), getChatbotStats);
 
 export { router as chatbotRouter };
