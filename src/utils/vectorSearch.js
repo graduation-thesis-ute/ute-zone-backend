@@ -101,22 +101,42 @@ async function searchSimilarMemories(query, userId, conversationId) {
   return results;
 }
 
+// Hàm tóm tắt nội dung bằng AI
+async function summarizeContent(content) {
+  console.log("Tóm tắt nội dung:", content);
+  const systemMessage = new SystemMessage({
+    content:
+      "Bạn là một trợ lý tóm tắt. Hãy tóm tắt đoạn hội thoại sau thành một câu ngắn gọn bao gồm thông tin câu hỏi và câu trả lời, tập trung vào thông tin quan trọng nhất. Chỉ trả về bản tóm tắt, không thêm giải thích.",
+  });
+
+  const humanMessage = new HumanMessage({
+    content: content,
+  });
+
+  const response = await model.invoke([systemMessage, humanMessage]);
+  return response.content;
+}
+
 // Lưu ký ức vào ChatbotMemory
 async function saveMemory(userId, conversationId, content) {
-  const embedding = await embeddings.embedQuery(content);
+  // Tóm tắt nội dung trước khi lưu
+  const summarizedContent = await summarizeContent(content);
+  console.log("Tóm tắt nội dung:", summarizedContent);
+  const embedding = await embeddings.embedQuery(summarizedContent);
+
   await ChatbotMemory.create({
     userId,
     conversationId,
-    content,
+    content: summarizedContent,
     embedding,
     timestamp: new Date(),
   });
+}
 
-  // Lấy lịch sử trò chuyện
-  async function getConversationHistory(userId) {
-    const conversation = await ChatbotConversation.findOne({ userId });
-    return conversation ? conversation.messages : [];
-  }
+// Lấy lịch sử trò chuyện
+async function getConversationHistory(userId) {
+  const conversation = await ChatbotConversation.findOne({ userId });
+  return conversation ? conversation.messages : [];
 }
 
 async function getAnswerFromDocuments(question, userId, conversationId, res) {
@@ -192,4 +212,5 @@ export {
   saveMemory,
   saveMessage,
   getAnswerFromDocuments,
+  summarizeContent,
 };
