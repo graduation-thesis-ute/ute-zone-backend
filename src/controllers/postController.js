@@ -129,23 +129,39 @@ const createPost = async (req, res) => {
 
     // Nếu nội dung không an toàn
     if (!moderationResult.isSafe) {
-      console.log('Blocked post due to moderation:', {
+      console.log('Content flagged by moderation:', {
         content,
         flaggedCategories: moderationResult.flaggedCategories,
         confidence: moderationResult.confidence,
         rawResponse: moderationResult.rawResponse
       });
-      return res.status(400).json({
-        result: false,
-        message: "Nội dung bài viết vi phạm quy định",
+
+      // Tạo bài viết với trạng thái rejected (3)
+      const post = await Post.create({
+        user: userId,
+        content,
+        imageUrls: imageUrls || [],
+        kind,
+        status: 3, // Rejected
+        moderationNote: "Nội dung vi phạm quy định",
+        flaggedCategories: moderationResult.flaggedCategories,
+        moderationDetails: {
+          textAnalysis: moderationResult.textAnalysis,
+          imageAnalysis: moderationResult.imageAnalysis,
+          confidence: moderationResult.confidence
+        }
+      });
+
+      return res.status(201).json({
+        result: true,
+        message: "Bài viết đã được tạo nhưng bị từ chối do vi phạm quy định",
         data: {
+          status: post.status,
           flaggedCategories: moderationResult.flaggedCategories,
-          analysis: {
-            text: moderationResult.textAnalysis,
-            images: moderationResult.imageAnalysis
-          },
-          confidence: moderationResult.confidence,
-          rawResponse: moderationResult.rawResponse
+          moderationDetails: {
+            textAnalysis: moderationResult.textAnalysis,
+            imageAnalysis: moderationResult.imageAnalysis
+          }
         }
       });
     }

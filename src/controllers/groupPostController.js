@@ -49,12 +49,35 @@ const createGroupPost = async (req, res) => {
                 });
 
                 if (!moderationResult.isSafe) {
-                    return makeErrorResponse({ 
+                    console.log('Content flagged by moderation:', {
+                        content,
+                        flaggedCategories: moderationResult.flaggedCategories,
+                        confidence: moderationResult.confidence
+                    });
+
+                    // Tạo bài viết với trạng thái rejected (3)
+                    const post = await GroupPost.create({
+                        group: groupId,
+                        user: user._id,
+                        content,
+                        imageUrls: imageUrls?.map((url) => (isValidUrl(url) ? url : null)).filter(Boolean) || [],
+                        status: 3, // Rejected
+                        moderationNote: "Nội dung vi phạm quy định",
+                        flaggedCategories: moderationResult.flaggedCategories,
+                        moderationDetails: {
+                            textAnalysis: moderationResult.textAnalysis,
+                            imageAnalysis: moderationResult.imageAnalysis,
+                            confidence: moderationResult.confidence
+                        }
+                    });
+
+                    return makeSuccessResponse({ 
                         res, 
-                        message: "Nội dung bài viết vi phạm quy định", 
+                        message: "Bài viết đã được tạo nhưng bị từ chối do vi phạm quy định",
                         data: {
+                            status: post.status,
                             flaggedCategories: moderationResult.flaggedCategories,
-                            details: {
+                            moderationDetails: {
                                 textAnalysis: moderationResult.textAnalysis,
                                 imageAnalysis: moderationResult.imageAnalysis
                             }
