@@ -16,8 +16,8 @@ const model = new ChatOpenAI({
 });
 
 const embeddings = new HuggingFaceTransformersEmbeddings({
-  modelName: "Xenova/all-mpnet-base-v2",
-  dtype: "fp16",
+  modelName: "bkai-foundation-models/vietnamese-bi-encoder",
+  dtype: "fp32",
 });
 
 // Initialize Langsmith client

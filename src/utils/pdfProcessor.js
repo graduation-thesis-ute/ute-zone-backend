@@ -7,7 +7,8 @@ import DocumentModel from "../models/documentChatBotModel.js";
 
 const client = new MongoClient(process.env.MONGODB_URI);
 const embeddings = new HuggingFaceTransformersEmbeddings({
-  modelName: "Xenova/all-mpnet-base-v2",
+  modelName: "bkai-foundation-models/vietnamese-bi-encoder",
+  dtype: "fp32",
 });
 
 async function processPDFAndStoreVector(buffer, filename, title) {
@@ -19,11 +20,19 @@ async function processPDFAndStoreVector(buffer, filename, title) {
     await client.connect();
 
     const data = await pdfParse(buffer);
-    const text = data.text;
+    const text = data.text.trim();
+    console.log(
+      "Nội dung trích xuất từ PDF (100 ký tự đầu tiên):",
+      text.slice(0, 100)
+    );
+
+    if (!text || text.length === 0) {
+      throw new Error("Không trích xuất được văn bản từ PDF");
+    }
 
     const splitter = new RecursiveCharacterTextSplitter({
-      chunkSize: 500,
-      chunkOverlap: 50,
+      chunkSize: 1000,
+      chunkOverlap: 150,
     });
     const docs = await splitter.createDocuments([text]);
     console.log(`Split into ${docs.length} chunks`);
