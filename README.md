@@ -35,3 +35,5 @@ Use the following types to categorize your commits:
 - **perf:** Improve page load speed by optimizing image sizes
 - **test:** Add unit tests for login functionality
 - **chore:** Update dependencies to latest versions
+
+[![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/graduation-thesis-ute/ute-zone-backend)
