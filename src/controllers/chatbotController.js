@@ -1,9 +1,15 @@
 import { Client } from "langsmith";
+import { HuggingFaceTransformersEmbeddings } from "@langchain/community/embeddings/huggingface_transformers";
+import ChatbotTopQuestion from "../models/chatbotTopQuestionModel.js";
 import "dotenv/config.js";
 
 const langsmithClient = new Client({
   apiUrl: process.env.LANGSMITH_ENDPOINT,
   apiKey: process.env.LANGSMITH_API_KEY,
+});
+
+const embeddings = new HuggingFaceTransformersEmbeddings({
+  modelName: "Xenova/all-mpnet-base-v2",
 });
 
 const getChatbotStats = async (req, res) => {
@@ -53,16 +59,32 @@ const getChatbotStats = async (req, res) => {
 
     // Lấy runs từ LangSmith (chỉ định project 'default')
     const runs = [];
+    const openAIRuns = []; // Array to store OpenAI runs
+
+    // Fetch runs from utezone project for conversation data
     for await (const run of langsmithClient.listRuns({
-      projectName: "default",
+      projectName: "utezone",
       startTime,
       endTime,
-      runTypes: ["chain"],
+      runTypes: ["chain", "llm"],
     })) {
       runs.push(run);
     }
 
+    // Fetch runs from default project for OpenAI response times
+    for await (const run of langsmithClient.listRuns({
+      projectName: "default",
+      startTime,
+      endTime,
+      runTypes: ["llm"],
+      name: "openai_chat", // Only get OpenAI chat runs
+    })) {
+      openAIRuns.push(run);
+    }
+
     console.log("Số lượng runs (chỉ chain runs):", runs.length);
+    console.log("Số lượng OpenAI runs:", openAIRuns.length);
+
     if (runs.length > 0) {
       console.log("Run đầu tiên:", {
         id: runs[0].id,
@@ -74,8 +96,18 @@ const getChatbotStats = async (req, res) => {
         end_time: runs[0].end_time,
         tags: runs[0].tags,
       });
-    } else {
-      console.log("Không tìm thấy runs nào trong khoảng thời gian này");
+    }
+
+    if (openAIRuns.length > 0) {
+      console.log("OpenAI Run đầu tiên:", {
+        id: openAIRuns[0].id,
+        project_id: openAIRuns[0].project_id,
+        project_name: openAIRuns[0].project_name,
+        run_type: openAIRuns[0].run_type,
+        name: openAIRuns[0].name,
+        start_time: openAIRuns[0].start_time,
+        end_time: openAIRuns[0].end_time,
+      });
     }
 
     // Khởi tạo thống kê
@@ -84,80 +116,115 @@ const getChatbotStats = async (req, res) => {
       averageResponseTime: 0,
       successRate: 0,
       activeUsers: new Set(),
-      topQuestions: new Map(),
+      topQuestions: [],
       timeSeriesData: new Map(),
     };
 
     let totalResponseTime = 0;
     let successfulRuns = 0;
 
-    // Xử lý từng run
+    // Hàm cosine similarity
+    function cosineSimilarity(vecA, vecB) {
+      const dot = vecA.reduce((sum, a, i) => sum + a * vecB[i], 0);
+      const normA = Math.sqrt(vecA.reduce((sum, a) => sum + a * a, 0));
+      const normB = Math.sqrt(vecB.reduce((sum, b) => sum + b * b, 0));
+      return dot / (normA * normB);
+    }
+
+    // Gom tất cả câu hỏi từ các run
+    const allQuestions = [];
     for (const run of runs) {
-      console.log("Đang xử lý run:", {
-        run_type: run.run_type,
-        name: run.name,
-        has_error: !!run.error,
-        start_time: run.start_time,
-        end_time: run.end_time,
-        tags: run.tags,
-        inputs: run.inputs,
-      });
-
-      if (run.run_type === "chain" || run.run_type === "llm") {
+      if (run.name === "chatbot_conversation") {
         stats.totalQueries++;
-
-        // Log chi tiết tags và inputs để debug
-        console.log("Run tags:", run.tags);
-        console.log("Run inputs:", run.inputs);
-
         const userId = run.tags
           ?.find((tag) => tag.startsWith("user_"))
           ?.split("_")[1];
         if (userId) stats.activeUsers.add(userId);
-
         if (!run.error) successfulRuns++;
-
-        if (run.end_time && run.start_time) {
-          const responseTime =
-            (new Date(run.end_time) - new Date(run.start_time)) / 1000;
-          totalResponseTime += responseTime;
-
-          const date = new Date(run.start_time).toISOString().split("T")[0];
-          if (!stats.timeSeriesData.has(date)) {
-            stats.timeSeriesData.set(date, {
-              queries: 0,
-              avgResponseTime: 0,
-              totalResponseTime: 0,
-            });
-          }
-          const dayData = stats.timeSeriesData.get(date);
-          dayData.queries++;
-          dayData.totalResponseTime += responseTime;
-          dayData.avgResponseTime = dayData.totalResponseTime / dayData.queries;
-        }
-
         const question =
           run.inputs?.question || run.inputs?.input || run.inputs?.query;
         if (question) {
-          stats.topQuestions.set(
-            question,
-            (stats.topQuestions.get(question) || 0) + 1
-          );
+          allQuestions.push(question);
         }
+      }
+    }
+
+    // Gom nhóm ngữ nghĩa và đếm số lần xuất hiện
+    const groupedQuestions = [];
+    for (const question of allQuestions) {
+      const embedding = await embeddings.embedQuery(question);
+      let found = false;
+      for (const gq of groupedQuestions) {
+        if (cosineSimilarity(embedding, gq.embedding) > 0.85) {
+          gq.count += 1;
+          found = true;
+          break;
+        }
+      }
+      if (!found) groupedQuestions.push({ question, embedding, count: 1 });
+    }
+
+    // Cập nhật lại DB: với mỗi nhóm, tìm trong DB và update count, nếu chưa có thì insert mới
+    for (const gq of groupedQuestions) {
+      const topQuestionsDB = await ChatbotTopQuestion.find()
+        .sort({ count: -1 })
+        .limit(10);
+      let found = false;
+      for (const q of topQuestionsDB) {
+        if (cosineSimilarity(gq.embedding, q.embedding) > 0.85) {
+          await ChatbotTopQuestion.updateOne(
+            { _id: q._id },
+            { $inc: { count: gq.count }, $set: { lastUpdated: new Date() } }
+          );
+          found = true;
+          break;
+        }
+      }
+      if (!found) {
+        await ChatbotTopQuestion.create({
+          question: gq.question,
+          embedding: gq.embedding,
+          count: gq.count,
+          lastUpdated: new Date(),
+        });
+      }
+    }
+
+    // Lấy top 10 câu hỏi phổ biến nhất từ DB (bỏ trường embedding)
+    const topQuestions = await ChatbotTopQuestion.find()
+      .sort({ count: -1, lastUpdated: -1 })
+      .limit(10)
+      .select("question count -_id");
+    stats.topQuestions = topQuestions;
+
+    // Process OpenAI runs for response time data
+    for (const run of openAIRuns) {
+      if (run.end_time && run.start_time) {
+        const responseTime =
+          (new Date(run.end_time) - new Date(run.start_time)) / 1000;
+        totalResponseTime += responseTime;
+
+        const date = new Date(run.start_time).toISOString().split("T")[0];
+        if (!stats.timeSeriesData.has(date)) {
+          stats.timeSeriesData.set(date, {
+            queries: 0,
+            avgResponseTime: 0,
+            totalResponseTime: 0,
+          });
+        }
+        const dayData = stats.timeSeriesData.get(date);
+        dayData.queries++;
+        dayData.totalResponseTime += responseTime;
+        dayData.avgResponseTime = dayData.totalResponseTime / dayData.queries;
       }
     }
 
     // Tính toán thống kê cuối cùng
     stats.averageResponseTime =
-      stats.totalQueries > 0 ? totalResponseTime / stats.totalQueries : 0;
+      openAIRuns.length > 0 ? totalResponseTime / openAIRuns.length : 0;
     stats.successRate =
       stats.totalQueries > 0 ? (successfulRuns / stats.totalQueries) * 100 : 0;
     stats.activeUsers = stats.activeUsers.size;
-
-    stats.topQuestions = Array.from(stats.topQuestions.entries())
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, 10)
-      .map(([question, count]) => ({ question, count }));
 
     stats.timeSeriesData = Array.from(stats.timeSeriesData.entries())
       .map(([date, data]) => ({
@@ -174,6 +241,7 @@ const getChatbotStats = async (req, res) => {
       activeUsers: stats.activeUsers,
       topQuestionsCount: stats.topQuestions.length,
       timeSeriesDataCount: stats.timeSeriesData.length,
+      openAIRunsCount: openAIRuns.length,
     });
 
     res.json({
