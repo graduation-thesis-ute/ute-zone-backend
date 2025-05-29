@@ -247,7 +247,6 @@ async function summarizeContent(content) {
 async function saveMemory(userId, conversationId, content) {
   // Tóm tắt nội dung trước khi lưu
   const summarizedContent = await summarizeContent(content);
-  console.log("Tóm tắt nội dung:", summarizedContent);
   const embedding = await embeddings.embedQuery(summarizedContent);
 
   await ChatbotMemory.create({

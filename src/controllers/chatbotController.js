@@ -1,6 +1,7 @@
 import { Client } from "langsmith";
 import { HuggingFaceTransformersEmbeddings } from "@langchain/community/embeddings/huggingface_transformers";
 import ChatbotTopQuestion from "../models/chatbotTopQuestionModel.js";
+import ProcessedRun from "../models/processedRunModel.js";
 import "dotenv/config.js";
 
 const langsmithClient = new Client({
@@ -57,9 +58,14 @@ const getChatbotStats = async (req, res) => {
       projects.map((p) => ({ id: p.id, name: p.name }))
     );
 
-    // Lấy runs từ LangSmith (chỉ định project 'default')
+    // Lấy danh sách runs đã xử lý
+    const processedRuns = await ProcessedRun.find().select("runId");
+    const processedRunIds = new Set(processedRuns.map((run) => run.runId));
+
+    // Lấy runs từ LangSmith (chỉ định project 'utezone')
     const runs = [];
     const openAIRuns = []; // Array to store OpenAI runs
+    const allRuns = []; // Array to store all runs for statistics
 
     // Fetch runs from utezone project for conversation data
     for await (const run of langsmithClient.listRuns({
@@ -68,7 +74,23 @@ const getChatbotStats = async (req, res) => {
       endTime,
       runTypes: ["chain", "llm"],
     })) {
-      runs.push(run);
+      // Kiểm tra start_time có nằm trong khoảng thời gian không
+      const runStartTime = new Date(run.start_time);
+      if (runStartTime >= startTime && runStartTime <= endTime) {
+        console.log(
+          "Utezone Run start_time:",
+          run.start_time,
+          "end_time:",
+          run.end_time
+        );
+        // Lưu tất cả runs để tính thống kê
+        allRuns.push(run);
+
+        // Chỉ thêm runs chưa được xử lý vào mảng xử lý
+        if (!processedRunIds.has(run.id)) {
+          runs.push(run);
+        }
+      }
     }
 
     // Fetch runs from default project for OpenAI response times
@@ -77,9 +99,27 @@ const getChatbotStats = async (req, res) => {
       startTime,
       endTime,
       runTypes: ["llm"],
-      name: "openai_chat", // Only get OpenAI chat runs
+      name: "openai_chat",
     })) {
-      openAIRuns.push(run);
+      // Kiểm tra cả start_time và end_time có nằm trong khoảng thời gian không
+      const runStartTime = new Date(run.start_time);
+      const runEndTime = run.end_time ? new Date(run.end_time) : null;
+
+      if (
+        runStartTime >= startTime &&
+        runStartTime <= endTime &&
+        (!runEndTime || (runEndTime >= startTime && runEndTime <= endTime))
+      ) {
+        console.log(
+          "Default Run start_time:",
+          run.start_time,
+          "end_time:",
+          run.end_time
+        );
+        if (!processedRunIds.has(run.id)) {
+          openAIRuns.push(run);
+        }
+      }
     }
 
     console.log("Số lượng runs (chỉ chain runs):", runs.length);
@@ -131,9 +171,8 @@ const getChatbotStats = async (req, res) => {
       return dot / (normA * normB);
     }
 
-    // Gom tất cả câu hỏi từ các run
-    const allQuestions = [];
-    for (const run of runs) {
+    // Tính toán thống kê từ tất cả các runs
+    for (const run of allRuns) {
       if (run.name === "chatbot_conversation") {
         stats.totalQueries++;
         const userId = run.tags
@@ -141,53 +180,54 @@ const getChatbotStats = async (req, res) => {
           ?.split("_")[1];
         if (userId) stats.activeUsers.add(userId);
         if (!run.error) successfulRuns++;
+      }
+    }
+
+    // Gom tất cả câu hỏi từ các run mới
+    const allQuestions = [];
+    for (const run of runs) {
+      if (run.name === "chatbot_conversation") {
         const question =
           run.inputs?.question || run.inputs?.input || run.inputs?.query;
         if (question) {
-          allQuestions.push(question);
+          allQuestions.push({ question, runId: run.id });
         }
       }
     }
 
-    // Gom nhóm ngữ nghĩa và đếm số lần xuất hiện
-    const groupedQuestions = [];
-    for (const question of allQuestions) {
+    // Process each new question and compare with DB entries
+    for (const { question, runId } of allQuestions) {
       const embedding = await embeddings.embedQuery(question);
-      let found = false;
-      for (const gq of groupedQuestions) {
-        if (cosineSimilarity(embedding, gq.embedding) > 0.85) {
-          gq.count += 1;
-          found = true;
-          break;
-        }
-      }
-      if (!found) groupedQuestions.push({ question, embedding, count: 1 });
-    }
+      const topQuestionsDB = await ChatbotTopQuestion.find();
 
-    // Cập nhật lại DB: với mỗi nhóm, tìm trong DB và update count, nếu chưa có thì insert mới
-    for (const gq of groupedQuestions) {
-      const topQuestionsDB = await ChatbotTopQuestion.find()
-        .sort({ count: -1 })
-        .limit(10);
       let found = false;
       for (const q of topQuestionsDB) {
-        if (cosineSimilarity(gq.embedding, q.embedding) > 0.85) {
+        if (cosineSimilarity(embedding, q.embedding) > 0.85) {
+          // Update count for existing question
           await ChatbotTopQuestion.updateOne(
             { _id: q._id },
-            { $inc: { count: gq.count }, $set: { lastUpdated: new Date() } }
+            { $inc: { count: 1 }, $set: { lastUpdated: new Date() } }
           );
           found = true;
           break;
         }
       }
+
       if (!found) {
+        // Add new question to DB
         await ChatbotTopQuestion.create({
-          question: gq.question,
-          embedding: gq.embedding,
-          count: gq.count,
+          question: question,
+          embedding: embedding,
+          count: 1,
           lastUpdated: new Date(),
         });
       }
+
+      // Đánh dấu run đã được xử lý
+      await ProcessedRun.create({
+        runId: runId,
+        processedAt: new Date(),
+      });
     }
 
     // Lấy top 10 câu hỏi phổ biến nhất từ DB (bỏ trường embedding)
@@ -229,7 +269,7 @@ const getChatbotStats = async (req, res) => {
     stats.timeSeriesData = Array.from(stats.timeSeriesData.entries())
       .map(([date, data]) => ({
         date,
-        queries: data.queries,
+        queries: Math.round(data.queries / 2),
         avgResponseTime: data.avgResponseTime,
       }))
       .sort((a, b) => new Date(a.date) - new Date(b.date));
