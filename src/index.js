@@ -1,4 +1,5 @@
 import express from "express";
+import session from "express-session";
 import dbConfig from "./configurations/dbConfig.js";
 import "dotenv/config.js";
 import cors from "cors";
@@ -26,8 +27,11 @@ import { Server } from "socket.io";
 import path from "path";
 import { fileURLToPath } from "url";
 import { setupSocketHandlers } from "./utils/utils.js";
-import { statisticRouter } from "./routes/StatisticRouter.js";
+import { statisticRouter } from "./routes/statisticRouter.js";
 import { settingRouter } from "./routes/settingRouter.js";
+import { chatbotRouter } from "./routes/chatbotRouter.js";
+import "./configurations/googleConfig.js";
+import passport from "passport";
 import { pageRouter } from "./routes/pageRouter.js";
 import { pageFollowerRouter } from "./routes/pageFollowerRouter.js";
 import { pageMemberRouter } from "./routes/pageMemberRouter.js";
@@ -44,6 +48,7 @@ import { groupPostCommentRouter } from "./routes/groupPostCommentRouter.js";
 import { groupPostCommentReactionRouter } from "./routes/groupPostCommentReactionRouter.js";
 import { moderationSettingRouter } from "./routes/moderationSettingRouter.js";
 import recommendationRouter from "./routes/recommendationRoutes.js";
+
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const app = express();
@@ -53,8 +58,21 @@ const io = new Server(httpServer);
 app.use(cors(corsOptions));
 app.use(express.json({ limit: "200mb" }));
 
+app.use(
+  session({
+    secret: process.env.SESSION_SECRET,
+    resave: false,
+    saveUninitialized: false,
+    cookie: { secure: false },
+  })
+);
+
+app.use(passport.initialize());
+app.use(passport.session());
+
 app.use("/api-docs", swaggerUi.serve, swaggerUi.setup(swaggerDocs));
 app.use("/v1/user", userRouter);
+app.use("/v1/chatbot", chatbotRouter);
 app.use("/v1/role", roleRouter);
 app.use("/v1/file", fileRouter);
 app.use("/v1/permission", permissionRouter);

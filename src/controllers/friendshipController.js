@@ -30,13 +30,13 @@ const sendFriendRequest = async (req, res) => {
         message: "Please provide a valid user ID",
       });
     }
-    const isAllowed = await validateMaxFriendRequests(currentUser);
-    if (!isAllowed) {
-      return makeErrorResponse({
-        res,
-        message: "Bạn đã đạt giới hạn gửi lời mời kết bạn",
-      });
-    }
+    // const isAllowed = await validateMaxFriendRequests(currentUser);
+    // if (!isAllowed) {
+    //   return makeErrorResponse({
+    //     res,
+    //     message: "Bạn đã đạt giới hạn gửi lời mời kết bạn",
+    //   });
+    // }
     const existingFriendship = await Friendship.findOne({
       $or: [
         { sender: currentUser._id, receiver: user },
