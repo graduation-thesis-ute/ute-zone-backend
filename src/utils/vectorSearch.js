@@ -3,16 +3,104 @@ import "dotenv/config.js";
 import { ChatOpenAI } from "@langchain/openai";
 import { SystemMessage, HumanMessage } from "@langchain/core/messages";
 import { HuggingFaceTransformersEmbeddings } from "@langchain/community/embeddings/huggingface_transformers";
-import { Client, RunTree } from "langsmith";
+import { Client } from "langsmith";
 import ChatbotMemory from "../models/chatbotMemoryModel.js";
 import ChatbotConversation from "../models/chatbotConversationModel.js";
 
 const client = new MongoClient(process.env.MONGODB_URI);
+const isTracingEnabled = process.env.LANGSMITH_TRACING === "true";
+const langsmithClient = isTracingEnabled
+  ? new Client({
+      apiUrl: process.env.LANGSMITH_ENDPOINT,
+      apiKey: process.env.LANGSMITH_API_KEY,
+    })
+  : null;
+
+// Cache để tránh duplicate runs
+const runCache = new Map();
 
 const model = new ChatOpenAI({
   model: "gpt-4o-mini",
   openAIApiKey: process.env.OPENAI_API_KEY,
   temperature: 0,
+  ...(isTracingEnabled && {
+    callbacks: [
+      {
+        handleLLMStart: async (llm, prompts) => {
+          if (!langsmithClient) return;
+
+          try {
+            const runKey = `${Date.now()}-${Math.random()}`;
+            const run = await langsmithClient.createRun({
+              name: "openai_chat",
+              run_type: "llm",
+              inputs: { prompts },
+              metadata: {
+                model_name: llm.modelName,
+                temperature: llm.temperature,
+                operation: "chat_completion",
+                run_key: runKey,
+              },
+              project_name: "utezone",
+            });
+
+            if (run && run.id) {
+              runCache.set(runKey, run.id);
+              return runKey;
+            }
+          } catch (error) {
+            console.error("Error creating langsmith run for OpenAI:", error);
+          }
+        },
+        handleLLMEnd: async (output, runKey) => {
+          if (!langsmithClient || !runKey) return;
+
+          const runId = runCache.get(runKey);
+          if (!runId) return;
+
+          try {
+            await langsmithClient.updateRun(runId, {
+              outputs: {
+                generations: output.generations,
+                llmOutput: output.llmOutput,
+              },
+              end_time: new Date().toISOString(),
+            });
+            runCache.delete(runKey);
+          } catch (error) {
+            console.error("Error updating langsmith run for OpenAI:", error);
+            if (error.message?.includes("Conflict")) {
+              runCache.delete(runKey);
+            }
+          }
+        },
+        handleLLMError: async (error, runKey) => {
+          if (!langsmithClient || !runKey) return;
+
+          const runId = runCache.get(runKey);
+          if (!runId) return;
+
+          try {
+            await langsmithClient.updateRun(runId, {
+              error: error.message,
+              metadata: {
+                error_type: error.name,
+                status: "error",
+              },
+              end_time: new Date().toISOString(),
+            });
+          } catch (updateError) {
+            console.error(
+              "Error updating langsmith run for OpenAI error:",
+              updateError
+            );
+          } finally {
+            runCache.delete(runKey);
+          }
+        },
+      },
+    ],
+  }),
 });
 
 const embeddings = new HuggingFaceTransformersEmbeddings({
@@ -20,13 +108,7 @@ const embeddings = new HuggingFaceTransformersEmbeddings({
   dtype: "fp32",
 });
 
-// Initialize Langsmith client
-const langsmithClient = new Client({
-  apiUrl: process.env.LANGSMITH_ENDPOINT,
-  apiKey: process.env.LANGSMITH_API_KEY,
-});
-
-async function searchSimilarDocuments(query) {
+async function searchSimilarDocuments(query, parentRunId) {
   const collection = client
     .db(process.env.DB_NAME)
     .collection(process.env.DB_COLLECTION_VECTOR_SEARCH);
@@ -53,6 +135,22 @@ async function searchSimilarDocuments(query) {
     ])
     .toArray();
 
+  if (parentRunId) {
+    try {
+      await langsmithClient.updateRun(parentRunId, {
+        outputs: {
+          documents_found: results.length,
+        },
+        metadata: {
+          status: "success",
+        },
+        end_time: new Date().toISOString(),
+      });
+    } catch (error) {
+      console.error("Error updating langsmith run for document search:", error);
+    }
+  }
+
   return results;
 }
 
@@ -76,7 +174,12 @@ async function saveMessage(userId, conversationId, question, answer) {
 }
 
 // Tìm kiếm ký ức tương tự
-async function searchSimilarMemories(query, userId, conversationId) {
+async function searchSimilarMemories(
+  query,
+  userId,
+  conversationId,
+  parentRunId
+) {
   const collection = client
     .db(process.env.DB_NAME)
     .collection(process.env.DB_COLLECTION_MEMORY_SEARCH);
@@ -104,6 +207,22 @@ async function searchSimilarMemories(query, userId, conversationId) {
       },
     ])
     .toArray();
+
+  if (parentRunId) {
+    try {
+      await langsmithClient.updateRun(parentRunId, {
+        outputs: {
+          memories_found: results.length,
+        },
+        metadata: {
+          status: "success",
+        },
+        end_time: new Date().toISOString(),
+      });
+    } catch (error) {
+      console.error("Error updating langsmith run for memory search:", error);
+    }
+  }
 
   return results;
 }
@@ -147,44 +266,38 @@ async function getConversationHistory(userId) {
 }
 
 async function getAnswerFromDocuments(question, userId, conversationId, res) {
-  // Create a new run tree for this conversation
-  const runTree = new RunTree({
-    name: "chatbot_conversation",
-    run_type: "chain",
-    inputs: { question, userId, conversationId },
-    client: langsmithClient,
-  });
+  let parentRun = null;
+  if (isTracingEnabled) {
+    try {
+      parentRun = await langsmithClient.createRun({
+        name: "chatbot_conversation",
+        run_type: "chain",
+        inputs: { question, userId, conversationId },
+        tags: [`user_${userId}`, `conversation_${conversationId}`],
+        metadata: {
+          timestamp: new Date().toISOString(),
+        },
+        project_name: "utezone",
+      });
+    } catch (error) {
+      console.error("Error creating parent langsmith run:", error);
+    }
+  }
 
   try {
     console.log("ID người dùng get in vectorSearch:", userId);
     console.log("ID cuộc trò chuyện get in vectorSearch:", conversationId);
     console.log("Câu hỏi:", question);
 
-    // Trace document search
-    const documentSearchRun = await runTree.createChild({
-      name: "document_search",
-      run_type: "chain",
-      inputs: { query: question },
-      tags: ["document_search", `user_${userId}`],
-    });
-    const documents = await searchSimilarDocuments(question);
-    await documentSearchRun.end({ outputs: { documents } });
+    const documents = await searchSimilarDocuments(question, parentRun?.id);
+    console.log("Tài liệu tìm được:", documents);
 
-    // Trace memory search
-    const memorySearchRun = await runTree.createChild({
-      name: "memory_search",
-      run_type: "chain",
-      inputs: { query: question, userId, conversationId },
-      tags: ["memory_search", `user_${userId}`],
-    });
     const memories = await searchSimilarMemories(
       question,
       userId,
-      conversationId
+      conversationId,
+      parentRun?.id
     );
-    await memorySearchRun.end({ outputs: { memories } });
-
-    console.log("Tài liệu tìm được:", documents);
     console.log("Ký ức tìm được:", memories);
 
     let context = [
@@ -219,41 +332,24 @@ Nếu câu hỏi mơ hồ, hãy khuyến khích người dùng làm rõ. Nếu �
 
     let fullResponse = "";
 
-    // Trace the model response
-    const modelRun = await runTree.createChild({
-      name: "model_response",
-      run_type: "llm",
-      inputs: {
-        question,
-        context,
-        model: "gpt-4-mini",
-        temperature: 0,
-      },
-      tags: ["model_response", `user_${userId}`],
-      metadata: {
-        model: "gpt-4-mini",
-        temperature: 0,
-        context_length: context.length,
-      },
+    const stream = await model.stream([systemMessage, humanMessage], {
+      tags: [`user_${userId}`, `conversation_${conversationId}`],
+      metadata: parentRun
+        ? {
+            run_id: parentRun.id,
+            operation: "generate_response",
+          }
+        : undefined,
     });
 
-    const stream = await model.stream([systemMessage, humanMessage]);
     for await (const chunk of stream) {
       const token = chunk.content || "";
       fullResponse += token;
       res.write(`data: ${JSON.stringify({ token })}\n\n`);
     }
-    await modelRun.end({ outputs: { response: fullResponse } });
-
-    // Trace saving message and memory
-    const saveRun = await runTree.createChild({
-      name: "save_conversation",
-      run_type: "chain",
-      inputs: { userId, conversationId, question, response: fullResponse },
-      tags: ["save_conversation", `user_${userId}`],
-    });
 
     await saveMessage(userId, conversationId, question, fullResponse);
+
     if (fullResponse.length > 50) {
       await saveMemory(
         userId,
@@ -261,22 +357,44 @@ Nếu câu hỏi mơ hồ, hãy khuyến khích người dùng làm rõ. Nếu �
         `Người dùng hỏi: ${question}. Trả lời: ${fullResponse.slice(0, 200)}`
       );
     }
-    await saveRun.end({ outputs: { success: true } });
 
-    // End the run tree with success
-    await runTree.end({
-      outputs: { response: fullResponse },
-      tags: ["success", `user_${userId}`],
-    });
+    if (parentRun) {
+      try {
+        await langsmithClient.updateRun(parentRun.id, {
+          outputs: {
+            response: fullResponse,
+            context_length: context.length,
+            response_length: fullResponse.length,
+          },
+          metadata: {
+            status: "success",
+            documents_found: documents.length,
+            memories_found: memories.length,
+          },
+          end_time: new Date().toISOString(),
+        });
+      } catch (error) {
+        console.error("Error updating parent langsmith run:", error);
+      }
+    }
 
     res.write(`data: ${JSON.stringify({ done: true })}\n\n`);
     res.end();
   } catch (error) {
-    // End the run tree with error
-    await runTree.end({
-      error: error.message,
-      tags: ["error", `user_${userId}`],
-    });
+    if (parentRun) {
+      try {
+        await langsmithClient.updateRun(parentRun.id, {
+          error: error.message,
+          metadata: {
+            status: "error",
+            error_type: error.name,
+          },
+          end_time: new Date().toISOString(),
+        });
+      } catch (updateError) {
+        console.error("Error updating parent langsmith run:", updateError);
+      }
+    }
     throw error;
   }
 }
