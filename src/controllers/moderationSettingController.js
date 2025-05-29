@@ -4,6 +4,7 @@ import GroupMember from "../models/groupMemberModel.js";
 import Page from "../models/pageModel.js";
 import Group from "../models/groupModel.js";
 import { makeErrorResponse, makeSuccessResponse } from "../services/apiService.js";
+import User from "../models/userModel.js";
 
 // Kiểm tra quyền admin cho cài đặt toàn cục (Post)
 const checkGlobalModerationPermission = async (user) => {
@@ -24,13 +25,26 @@ const checkEntityModerationPermission = async (entityType, entityId, userId) => 
       throw new Error("You do not have permission to update page moderation settings");
     }
   } else if (entityType === 3) { // GroupPost
+    // Kiểm tra xem user có phải là super admin không
+    const user = await User.findById(userId);
+    if (!user) {
+      throw new Error("User not found");
+    }
+
+    // Nếu user là super admin thì cho phép luôn
+    if (user.isSuperAdmin === 1) {
+      return;
+    }
+
+    // Nếu không phải super admin, kiểm tra role trong group
     const groupMember = await GroupMember.findOne({ 
       group: entityId, 
       user: userId,
-      role: 1 // Chỉ admin group mới được cập nhật
+      role: { $in: [1, 2] }  // Role là 1 (admin) hoặc 2 (moderator)
     });
+
     if (!groupMember) {
-      throw new Error("You do not have permission to update group moderation settings");
+      throw new Error("Bạn không có quyền cập nhật cài đặt duyệt tự động của nhóm. Chỉ admin và moderator của nhóm mới có quyền này.");
     }
   }
 };
@@ -202,9 +216,25 @@ const updateGroupModerationSetting = async (req, res) => {
 // Lấy cài đặt duyệt bài toàn cục
 const getGlobalModerationSetting = async (req, res) => {
   try {
-    req.query.entityType = 1;
-    req.query.entityId = null;
-    return getModerationSetting(req, res);
+    // Tìm cài đặt toàn cục với entityId là "global"
+    const setting = await ModerationSetting.findOne({
+      entityType: 1,
+      entityId: "global"
+    });
+
+    if (!setting) {
+      // Nếu chưa có cài đặt, tạo mặc định
+      const defaultSetting = await ModerationSetting.create({
+        entityType: 1,
+        entityId: "global",
+        isAutoModerationEnabled: false,
+        isModerationRequired: true,
+        updatedBy: req.user._id
+      });
+      return makeSuccessResponse({ res, data: defaultSetting });
+    }
+
+    return makeSuccessResponse({ res, data: setting });
   } catch (error) {
     return makeErrorResponse({ res, message: error.message });
   }
@@ -217,18 +247,19 @@ const updateGlobalModerationSetting = async (req, res) => {
 
     await checkGlobalModerationPermission(req.user);
 
-    const setting = await ModerationSetting.findOneAndUpdate(
-      {
-        entityType: 1,
-        entityId: null
-      },
-      {
-        isAutoModerationEnabled,
-        isModerationRequired,
-        updatedBy: req.user._id
-      },
-      { new: true, upsert: true }
-    );
+    // Xóa tất cả các cài đặt toàn cục hiện tại
+    await ModerationSetting.deleteMany({
+      entityType: 1
+    });
+
+    // Tạo cài đặt toàn cục mới
+    const setting = await ModerationSetting.create({
+      entityType: 1,
+      entityId: "global", // Sử dụng "global" thay vì null
+      isAutoModerationEnabled,
+      isModerationRequired,
+      updatedBy: req.user._id
+    });
 
     return makeSuccessResponse({ 
       res, 

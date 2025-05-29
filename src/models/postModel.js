@@ -35,6 +35,33 @@ const PostSchema = new mongoose.Schema(
       enum: [0, 1],
       default: 0,
     },
+    // New fields for recommendation algorithm
+    engagement: {
+      viewCount: { type: Number, default: 0 },
+      likeCount: { type: Number, default: 0 },
+      commentCount: { type: Number, default: 0 },
+      averageInteractionTime: { type: Number, default: 0 }, // in seconds
+      engagementRate: { type: Number, default: 0 }, // (likes + comments) / views
+    },
+    contentMetadata: {
+      tags: [{ type: String }],
+      keywords: [{ type: String }],
+      topic: { type: String },
+      sentiment: { type: Number }, // -1 to 1 (negative to positive)
+    },
+    recommendationScore: {
+      type: Number,
+      default: 0,
+    },
+    lastRecommendedAt: {
+      type: Date,
+      default: null,
+    },
+    recommendationHistory: [{
+      userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+      score: Number,
+      timestamp: { type: Date, default: Date.now }
+    }]
   },
   schemaOptions
 );
