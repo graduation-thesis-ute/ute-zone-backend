@@ -383,6 +383,12 @@ const permissionData = [
     permissionCode: "PER_C",
     groupName: "Permission",
   },
+  {
+    _id: "67d3a4486d22ea7b9604782b",
+    name: "Tạo page",
+    permissionCode: "PAGE_C",
+    groupName: "Page",
+  },
 ];
 
 export default permissionData;
