@@ -28,6 +28,7 @@ const getChatbotStats = async (req, res) => {
 
     const startTime = new Date(startDate);
     const endTime = new Date(endDate);
+    endTime.setHours(23, 59, 59, 999); // Set to end of the day
 
     if (isNaN(startTime.getTime()) || isNaN(endTime.getTime())) {
       return res.status(400).json({
