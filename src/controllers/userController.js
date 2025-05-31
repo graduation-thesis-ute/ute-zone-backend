@@ -23,6 +23,9 @@ import {
   StudentIdPattern,
 } from "../static/constant.js";
 import "dotenv/config.js";
+import { OAuth2Client } from "google-auth-library";
+
+const client = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 
 const loginUser = async (req, res) => {
   try {
@@ -54,19 +57,27 @@ const loginUser = async (req, res) => {
 };
 
 const googleLoginUser = async (req, res) => {
-  console.log("Google login callback");
-  const { googleId, email, name, avatar } = req.user;
-
-  // Kiểm tra email có hợp lệ không
-  if (!email || !EmailPattern.test(email)) {
-    return res.redirect(
-      `${process.env.FE_URL}/login?error=${encodeURIComponent(
-        "Vui lòng sử dụng email thuộc @student.hcmute.edu.vn hoặc @hcmute.edu.vn"
-      )}`
-    );
-  }
-
   try {
+    const { credential } = req.body;
+
+    // Verify Google token
+    const ticket = await client.verifyIdToken({
+      idToken: credential,
+      audience: process.env.GOOGLE_CLIENT_ID,
+    });
+
+    const payload = ticket.getPayload();
+    const { sub: googleId, email, name, picture: avatar } = payload;
+
+    // Kiểm tra email có hợp lệ không
+    if (!email || !EmailPattern.test(email)) {
+      return makeErrorResponse({
+        res,
+        message:
+          "Vui lòng sử dụng email thuộc @student.hcmute.edu.vn hoặc @hcmute.edu.vn",
+      });
+    }
+
     // Tìm user theo email
     let user = await User.findOne({ email });
 
@@ -91,17 +102,18 @@ const googleLoginUser = async (req, res) => {
 
     // Tạo access token
     const accessToken = createToken(user._id);
-    console.log("Google login success, token:", accessToken);
 
-    // Chuyển hướng đến frontend với token
-    return res.redirect(`${process.env.FE_URL}?token=${accessToken}`);
+    return makeSuccessResponse({
+      res,
+      message: "Google login success",
+      data: { accessToken },
+    });
   } catch (error) {
     console.error("Google login error:", error);
-    return res.redirect(
-      `${process.env.FE_URL}/login?error=${encodeURIComponent(error.message)}`
-    );
+    return makeErrorResponse({ res, message: error.message });
   }
 };
+
 const getUserProfile = async (req, res) => {
   try {
     const { user } = req;
