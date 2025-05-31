@@ -26,18 +26,7 @@ const router = express.Router();
 
 router.post("/login", loginUser);
 // Google OAuth
-router.get(
-  "/auth/google",
-  passport.authenticate("google", {
-    scope: ["profile", "email"],
-    prompt: "select_account",
-  })
-);
-router.get(
-  "/auth/google/callback",
-  passport.authenticate("google", { failureRedirect: "/login" }),
-  googleLoginUser
-);
+router.post("/auth/google", googleLoginUser);
 router.post("/verify-token", verifyToken);
 router.get("/profile", auth(""), getUserProfile);
 router.post("/register", registerUser);
