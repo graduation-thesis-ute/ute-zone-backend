@@ -75,9 +75,15 @@ const getChatbotStats = async (req, res) => {
       endTime,
       runTypes: ["chain", "llm"],
     })) {
-      // Kiểm tra start_time có nằm trong khoảng thời gian không
+      // Kiểm tra cả start_time và end_time có nằm trong khoảng thời gian không
       const runStartTime = new Date(run.start_time);
-      if (runStartTime >= startTime && runStartTime <= endTime) {
+      const runEndTime = run.end_time ? new Date(run.end_time) : null;
+
+      if (
+        runStartTime >= startTime &&
+        runStartTime <= endTime &&
+        (!runEndTime || (runEndTime >= startTime && runEndTime <= endTime))
+      ) {
         console.log(
           "Utezone Run start_time:",
           run.start_time,
@@ -239,24 +245,26 @@ const getChatbotStats = async (req, res) => {
     stats.topQuestions = topQuestions;
 
     // Process OpenAI runs for response time data
+    const dailyResponseTimes = new Map(); // Map to store response times for each day
+
     for (const run of openAIRuns) {
       if (run.end_time && run.start_time) {
         const responseTime =
           (new Date(run.end_time) - new Date(run.start_time)) / 1000;
         totalResponseTime += responseTime;
 
-        const date = new Date(run.start_time).toISOString().split("T")[0];
-        if (!stats.timeSeriesData.has(date)) {
-          stats.timeSeriesData.set(date, {
-            queries: 0,
-            avgResponseTime: 0,
-            totalResponseTime: 0,
+        // Convert to local date string to ensure correct date handling
+        const date = new Date(run.start_time).toLocaleDateString("en-CA"); // Format: YYYY-MM-DD
+
+        if (!dailyResponseTimes.has(date)) {
+          dailyResponseTimes.set(date, {
+            totalTime: 0,
+            count: 0,
           });
         }
-        const dayData = stats.timeSeriesData.get(date);
-        dayData.queries++;
-        dayData.totalResponseTime += responseTime;
-        dayData.avgResponseTime = dayData.totalResponseTime / dayData.queries;
+        const dayData = dailyResponseTimes.get(date);
+        dayData.totalTime += responseTime;
+        dayData.count++;
       }
     }
 
@@ -267,13 +275,37 @@ const getChatbotStats = async (req, res) => {
       stats.totalQueries > 0 ? (successfulRuns / stats.totalQueries) * 100 : 0;
     stats.activeUsers = stats.activeUsers.size;
 
-    stats.timeSeriesData = Array.from(stats.timeSeriesData.entries())
-      .map(([date, data]) => ({
+    // Tạo mảng chứa tất cả các ngày trong khoảng thời gian
+    const allDates = [];
+    const currentDate = new Date(startTime);
+    while (currentDate <= endTime) {
+      allDates.push(currentDate.toLocaleDateString("en-CA")); // Format: YYYY-MM-DD
+      currentDate.setDate(currentDate.getDate() + 1);
+    }
+
+    // Đếm số lượng queries cho mỗi ngày từ runs có name là chatbot_conversation
+    const dailyQueries = new Map();
+    for (const run of allRuns) {
+      if (run.name === "chatbot_conversation") {
+        const date = new Date(run.start_time).toLocaleDateString("en-CA");
+        dailyQueries.set(date, (dailyQueries.get(date) || 0) + 1);
+      }
+    }
+
+    // Chuyển đổi Map thành Array và thêm các ngày không có dữ liệu
+    stats.timeSeriesData = allDates.map((date) => {
+      const responseTimeData = dailyResponseTimes.get(date);
+      return {
         date,
-        queries: Math.round(data.queries / 2),
-        avgResponseTime: data.avgResponseTime,
-      }))
-      .sort((a, b) => new Date(a.date) - new Date(b.date));
+        queries: dailyQueries.get(date) || 0,
+        avgResponseTime: responseTimeData
+          ? responseTimeData.totalTime / responseTimeData.count
+          : 0,
+      };
+    });
+
+    // Log the final time series data
+    console.log("Final time series data:", stats.timeSeriesData);
 
     console.log("Dữ liệu phản hồi cuối cùng:", {
       totalQueries: stats.totalQueries,
