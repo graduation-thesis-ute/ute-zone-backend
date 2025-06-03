@@ -120,7 +120,13 @@ const getPages = async (req, res)=>{
 
 const changeStatusPage = async(req, res) =>{
     try {
-        const {id, status, reason} = req.body;
+        const {id, status} = req.body;
+        const page = await Page.findById(id);
+        if (!page){
+            return makeErrorResponse({res, message: "Page not found"});
+        }
+        await page.updateOne({status});
+        return makeSuccessResponse({res, message: "Change status page success"});
     } catch (error) {
         return makeErrorResponse({res, message: error.message});
     }
@@ -130,4 +136,5 @@ export {
     updatePage,
     getPage,
     getPages,
+    changeStatusPage,
 };
