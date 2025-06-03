@@ -48,7 +48,7 @@ router.post("/documents", auth(), upload.single("file"), async (req, res) => {
     });
   } catch (err) {
     console.error(err);
-    res.status(500).json({ error: "Upload failed: " + err.message });
+    res.status(500).json({ error: "Lỗi upload: " + err.message });
   }
 });
 
