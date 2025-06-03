@@ -28,6 +28,7 @@ const formatPageData = async (page, currentUser) => {
         totalFollowers: followers.length,
         kind: page.kind,
         isOwner: isOwner,
+        status: page.status,
     };
 };
 

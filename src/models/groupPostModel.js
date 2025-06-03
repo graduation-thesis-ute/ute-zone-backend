@@ -1,5 +1,7 @@
 import mongoose from "mongoose";
 import { schemaOptions } from "../configurations/schemaConfig.js";
+import { deleteFileByUrl } from "../services/apiService.js";
+
 const groupPostSchema = new mongoose.Schema(
   {
     group: {
@@ -29,39 +31,34 @@ const groupPostSchema = new mongoose.Schema(
       enum: [0, 1],
       default: 0,
     },
-    // New fields for recommendation algorithm
-    engagement: {
-      viewCount: { type: Number, default: 0 },
-      likeCount: { type: Number, default: 0 },
-      commentCount: { type: Number, default: 0 },
-      averageInteractionTime: { type: Number, default: 0 },
-      engagementRate: { type: Number, default: 0 },
-      memberReachRate: { type: Number, default: 0 }, // views / total group members
-    },
-    contentMetadata: {
-      tags: [{ type: String }],
-      keywords: [{ type: String }],
-      topic: { type: String },
-      sentiment: { type: Number },
-      groupCategory: { type: String },
-    },
-    recommendationScore: {
-      type: Number,
-      default: 0,
-    },
-    lastRecommendedAt: {
-      type: Date,
-      default: null,
-    },
-    recommendationHistory: [{
-      userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
-      score: Number,
-      timestamp: { type: Date, default: Date.now }
-    }]
+    // Reference to recommendation data
+    recommendation: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "PostRecommendation"
+    }
   },
   schemaOptions
 );
 
-const GroupPost = mongoose.model("GroupPost", groupPostSchema);
+groupPostSchema.pre(
+  "deleteOne",
+  { document: true, query: false },
+  async function (next) {
+    try {
+      // Delete associated images
+      for (const imageUrl of this.imageUrls) {
+        await deleteFileByUrl(imageUrl);
+      }
+      // Delete associated recommendation data
+      if (this.recommendation) {
+        await mongoose.model("PostRecommendation").deleteOne({ _id: this.recommendation });
+      }
+      next();
+    } catch (error) {
+      next(error);
+    }
+  }
+);
 
+const GroupPost = mongoose.model("GroupPost", groupPostSchema);
 export default GroupPost; 

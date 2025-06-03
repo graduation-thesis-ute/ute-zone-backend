@@ -10,8 +10,9 @@ import {
 
   const createPagePostReaction = async (req, res) => {
     try {
-        const {pagePost, reactionType} = req.body;
+        const {pagePost} = req.body;
         const {user} = req;
+        const reactionType = 1;
         if (!isValidObjectId(pagePost)) {
             return makeErrorResponse({ res, message: "Invalid post" });
         }

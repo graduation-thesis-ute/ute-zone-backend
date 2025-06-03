@@ -70,6 +70,7 @@ const formatPagePostData = async (pagePost, currentUser) => {
         totalReactions: pagePost.totalReactions,
         isReacted: pagePost.isReacted,
         isUpdated: pagePost.isUpdated,
+        status: pagePost.status,
     };
 };
 

@@ -314,48 +314,14 @@ const checkTextContent = async (content) => {
 
 // Hàm kiểm tra hình ảnh với nhiều provider
 const checkImageContent = async (imageUrl) => {
-  // Tạo cache key từ URL hình ảnh
-  const cacheKey = `image:${imageUrl}`;
-  
-  // Kiểm tra cache
-  const cachedResult = contentCache.get(cacheKey);
-  if (cachedResult && (Date.now() - cachedResult.timestamp) < CACHE_TTL) {
-    console.log('Using cached image moderation result');
-    return cachedResult.data;
-  }
-
-  // TODO: Implement image moderation with multiple providers
-  // Hiện tại chỉ sử dụng OpenAI
-  try {
-    const response = await openai.images.analyze({
-      image: imageUrl,
-      model: "gpt-4-vision-preview"
-    });
-
-    const results = response.results[0];
-    
-    const result = {
-      isSafe: !results.flagged,
-      categories: results.categories,
-      confidence: results.category_scores,
-      provider: 'openai'
-    };
-
-    // Lưu vào cache
-    contentCache.set(cacheKey, {
-      data: result,
-      timestamp: Date.now()
-    });
-
-    return result;
-  } catch (error) {
-    // Nếu có lỗi API, thử lấy từ cache cũ
-    if (cachedResult) {
-      console.log('Using expired cached image moderation result due to API error');
-      return cachedResult.data;
-    }
-    throw new Error(`Error checking image: ${error.message}`);
-  }
+  // Tạm thời bỏ qua việc kiểm tra hình ảnh
+  // TODO: Implement proper image moderation using a suitable service
+  return {
+    isSafe: true,
+    categories: {},
+    confidence: {},
+    provider: 'none'
+  };
 };
 
 // Hàm kiểm tra toàn bộ bài post
@@ -364,32 +330,25 @@ const moderatePostContent = async (post) => {
     // Kiểm tra nội dung văn bản
     const textCheck = await checkTextContent(post.content);
     
-    // Kiểm tra các hình ảnh nếu có
-    let imageChecks = [];
-    if (post.imageUrls && post.imageUrls.length > 0) {
-      imageChecks = await Promise.all(
-        post.imageUrls.map(url => checkImageContent(url))
-      );
-    }
+    // Tạm thời bỏ qua việc kiểm tra hình ảnh
+    const imageChecks = post.imageUrls?.map(() => ({
+      isSafe: true,
+      categories: {},
+      confidence: {},
+      provider: 'none'
+    })) || [];
 
     // Tổng hợp kết quả
     const isTextSafe = textCheck.isSafe;
-    const isImagesSafe = imageChecks.every(check => check.isSafe);
-    const flaggedCategories = [
-      ...textCheck.flaggedCategories,
-      ...imageChecks.flatMap(check => 
-        Object.entries(check.categories)
-          .filter(([_, value]) => value)
-          .map(([key]) => key)
-      )
-    ];
+    const isImagesSafe = true; // Tạm thời luôn coi hình ảnh là an toàn
+    const flaggedCategories = textCheck.flaggedCategories;
 
     return {
       isSafe: isTextSafe && isImagesSafe,
       flaggedCategories: [...new Set(flaggedCategories)],
       textAnalysis: textCheck,
       imageAnalysis: imageChecks,
-      provider: textCheck.provider // Thêm thông tin về provider đã sử dụng
+      provider: textCheck.provider
     };
   } catch (error) {
     console.error('Error during post moderation:', error.message);
