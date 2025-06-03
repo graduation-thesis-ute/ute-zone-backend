@@ -10,25 +10,42 @@ const formatGroupPostData = async (groupPost, currentUser) => {
     group: groupPost.group,
     user: currentUser._id,
   });
-  if (!groupMember) {
-    throw new Error("You are not a member of this group");
-  }
-  groupPost.isOwner = groupPost.user._id.equals(currentUser._id) ? 1 : 0;
+
+  // Kiểm tra quyền truy cập nhóm
   const group = await Group.findById(groupPost.group);
+  if (!group) {
+    throw new Error("Group not found");
+  }
+
+  // Nếu không phải thành viên và nhóm không công khai
+  if (!groupMember && group.status !== 1) {
+    throw new Error("You don't have permission to view posts in this group");
+  }
+
+  // Nếu không phải thành viên, chỉ cho phép xem bài đăng đã duyệt
+  if (!groupMember && groupPost.status !== 2) {
+    throw new Error("You don't have permission to view this post");
+  }
+
+  groupPost.isOwner = groupPost.user._id.equals(currentUser._id) ? 1 : 0;
   const comments = await GroupPostComment.find({ groupPost: groupPost._id });
   const reactions = await GroupPostReaction.find({ groupPost: groupPost._id });
   groupPost.totalComments = comments.length;
   groupPost.totalReactions = reactions.length;
-  groupPost.isReacted = (await GroupPostReaction.exists({
+  
+  // Chỉ kiểm tra reaction nếu là thành viên
+  groupPost.isReacted = groupMember ? (await GroupPostReaction.exists({
     user: currentUser._id,
     groupPost: groupPost._id,
-  }))? 1 : 0;
+  })) ? 1 : 0 : 0;
+
   return {
       id: groupPost._id,
       group:{
         _id: group._id, 
         name: group.name,
         avatarUrl: group.avatarUrl,
+        status: group.status
       },
       user: {
         _id: groupPost.user._id,
@@ -64,11 +81,52 @@ const getListGroupPosts = async (req) => {
 
         const query = {};
 
-        if (groupId) {
+        // Nếu không có groupId, lấy tất cả bài đăng từ các nhóm công khai
+        if (!groupId) {
+            // Lấy danh sách các nhóm công khai
+            const publicGroups = await Group.find({ status: 1 }).select('_id');
+            const publicGroupIds = publicGroups.map(group => group._id);
+            
+            // Lấy danh sách các nhóm mà user là thành viên
+            const userGroups = await GroupMember.find({ 
+                user: currentUser._id 
+            }).select('group');
+            const userGroupIds = userGroups.map(member => member.group);
+
+            // Kết hợp cả hai danh sách để lấy tất cả nhóm có quyền xem
+            const accessibleGroupIds = [...new Set([...publicGroupIds, ...userGroupIds])];
+            
+            query.group = { $in: accessibleGroupIds };
+            
+            // Nếu không phải thành viên của nhóm, chỉ hiển thị bài đăng đã duyệt
+            query.status = 2;
+        } else {
             if (!isValidObjectId(groupId)) {
                 throw new Error("Invalid group id");
             }
             query.group = groupId;
+
+            // Kiểm tra quyền truy cập nhóm
+            const group = await Group.findById(groupId);
+            if (!group) {
+                throw new Error("Group not found");
+            }
+
+            // Kiểm tra xem user có phải là thành viên không
+            const isMember = await GroupMember.exists({ 
+                group: groupId, 
+                user: currentUser._id 
+            });
+
+            // Nếu không phải thành viên và nhóm không công khai
+            if (!isMember && group.status !== 1) {
+                throw new Error("You don't have permission to view posts in this group");
+            }
+
+            // Nếu không phải thành viên, chỉ cho phép xem bài đăng đã duyệt
+            if (!isMember) {
+                query.status = 2; // Chỉ hiển thị bài đăng đã duyệt
+            }
         }
 
         if (userId) {
@@ -78,39 +136,39 @@ const getListGroupPosts = async (req) => {
             query.author = userId;
         }
 
-       if (status) {
-        query.status = status;
-       }
+        if (status && (query.status === undefined)) {
+            query.status = status;
+        }
 
-       if (content) {
-        query.content = { $regex: content, $options: "i" };
-       }
+        if (content) {
+            query.content = { $regex: content, $options: "i" };
+        }
 
-       const sortCriteria = { createdAt: -1 };
+        const sortCriteria = { createdAt: -1 };
 
-       const [totalElements, groupPosts] = await Promise.all([
-        GroupPost.countDocuments(query),
-        GroupPost.find(query)
-        .populate("group", "name avatarUrl")  
-        .populate("user", "displayName avatarUrl")
-        .sort(sortCriteria)
-        .skip(offset)
-        .limit(limit),
-       ]);
+        const [totalElements, groupPosts] = await Promise.all([
+            GroupPost.countDocuments(query),
+            GroupPost.find(query)
+                .populate("group", "name avatarUrl status")  
+                .populate("user", "displayName avatarUrl")
+                .sort(sortCriteria)
+                .skip(offset)
+                .limit(limit),
+        ]);
        
-       const totalPages = Math.ceil(totalElements / limit);
+        const totalPages = Math.ceil(totalElements / limit);
 
-       const result = await Promise.all(
-        groupPosts.map(async (post) => {
-            return await formatGroupPostData(post, currentUser);
-        })
-       ); 
+        const result = await Promise.all(
+            groupPosts.map(async (post) => {
+                return await formatGroupPostData(post, currentUser);
+            })
+        ); 
 
-       return {
-        content: result,
-        totalPages,
-        totalElements,
-       };
+        return {
+            content: result,
+            totalPages,
+            totalElements,
+        };
     } catch (error) {
         throw error;
     }
