@@ -202,32 +202,6 @@ const updatePost = async (req, res) => {
       return makeErrorResponse({ res, message: "You do not have permission to update this post on this page" });
     }
 
-    // Kiểm tra nội dung mới trước khi cập nhật
-    const validImageUrls = imageUrls
-      ? imageUrls
-          .map((imageUrl) => (isValidUrl(imageUrl) ? imageUrl : null))
-          .filter((url) => url !== null)
-      : [];
-
-    const moderationResult = await moderatePostContent({
-      content,
-      imageUrls: validImageUrls
-    });
-
-    if (!moderationResult.isSafe) {
-      return makeErrorResponse({ 
-        res, 
-        message: "Updated content contains inappropriate material", 
-        data: {
-          flaggedCategories: moderationResult.flaggedCategories,
-          details: {
-            textAnalysis: moderationResult.textAnalysis,
-            imageAnalysis: moderationResult.imageAnalysis
-          }
-        }
-      });
-    }
-
     // Handle image deletion
     const oldImageUrls = post.imageUrls || [];
     const imagesToDelete = oldImageUrls.filter(
@@ -242,7 +216,7 @@ const updatePost = async (req, res) => {
       kind,
       status: status || post.status,
       isUpdated: 1,
-      imageUrls: validImageUrls,
+      imageUrls: imageUrls?.map((url) => (isValidUrl(url) ? url : null)).filter(Boolean) || [],
     });
 
     return makeSuccessResponse({ res, message: "Page post updated successfully" });
