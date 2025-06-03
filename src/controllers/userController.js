@@ -22,6 +22,10 @@ import {
   PhonePattern,
   StudentIdPattern,
 } from "../static/constant.js";
+import "dotenv/config.js";
+import { OAuth2Client } from "google-auth-library";
+
+const client = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 
 const loginUser = async (req, res) => {
   try {
@@ -48,6 +52,64 @@ const loginUser = async (req, res) => {
       data: { accessToken },
     });
   } catch (error) {
+    return makeErrorResponse({ res, message: error.message });
+  }
+};
+
+const googleLoginUser = async (req, res) => {
+  try {
+    const { credential } = req.body;
+
+    // Verify Google token
+    const ticket = await client.verifyIdToken({
+      idToken: credential,
+      audience: process.env.GOOGLE_CLIENT_ID,
+    });
+
+    const payload = ticket.getPayload();
+    const { sub: googleId, email, name, picture: avatar } = payload;
+
+    // Kiểm tra email có hợp lệ không
+    if (!email || !EmailPattern.test(email)) {
+      return makeErrorResponse({
+        res,
+        message:
+          "Vui lòng sử dụng email thuộc @student.hcmute.edu.vn hoặc @hcmute.edu.vn",
+      });
+    }
+
+    // Tìm user theo email
+    let user = await User.findOne({ email });
+
+    if (!user) {
+      // Tạo user mới nếu chưa tồn tại
+      user = await User.create({
+        googleId,
+        displayName: name,
+        email,
+        avatarUrl: avatar,
+        status: 1,
+        role: await Role.findOne({ kind: 1 }),
+      });
+    } else if (!user.googleId) {
+      // Cập nhật googleId nếu user tồn tại nhưng chưa liên kết Google
+      user = await User.findOneAndUpdate(
+        { email },
+        { googleId },
+        { new: true }
+      );
+    }
+
+    // Tạo access token
+    const accessToken = createToken(user._id);
+
+    return makeSuccessResponse({
+      res,
+      message: "Google login success",
+      data: { accessToken },
+    });
+  } catch (error) {
+    console.error("Google login error:", error);
     return makeErrorResponse({ res, message: error.message });
   }
 };
@@ -79,12 +141,13 @@ const registerUser = async (req, res) => {
         field: "email",
         message: "email cannot be null",
       });
-    } else if (!EmailPattern.test(email)) {
-      errors.push({
-        field: "email",
-        message: "email is invalid",
-      });
     }
+    // } else if (!EmailPattern.test(email)) {
+    //   errors.push({
+    //     field: "email",
+    //     message: "email is invalid",
+    //   });
+    // }
     if (!password) {
       errors.push({
         field: "password",
@@ -622,6 +685,7 @@ const loginAdmin = async (req, res) => {
 
 export {
   loginUser,
+  googleLoginUser,
   getUserProfile,
   forgotUserPassword,
   resetUserPassword,

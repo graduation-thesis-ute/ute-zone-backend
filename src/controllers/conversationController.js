@@ -1,5 +1,6 @@
 import Conversation from "../models/conversationModel.js";
 import ConversationMember from "../models/conversationMemberModel.js";
+import Message from "../models/messageModel.js";
 import {
   deleteFileByUrl,
   isValidObjectId,
@@ -232,6 +233,52 @@ const getConversations = async (req, res) => {
   }
 };
 
+const updateLastReadMessage = async (req, res) => {
+  try {
+    const { conversationId } = req.params;
+    const currentUser = req.user;
+
+    if (!isValidObjectId(conversationId)) {
+      return makeErrorResponse({ res, message: "Invalid conversation id" });
+    }
+
+    const conversation = await Conversation.findById(conversationId);
+    if (!conversation) {
+      return makeErrorResponse({ res, message: "Conversation not found" });
+    }
+
+    // Lấy tin nhắn mới nhất của conversation
+    const lastMessage = await Message.findOne({
+      conversation: conversationId,
+    }).sort({ createdAt: -1 });
+
+    if (lastMessage) {
+      // Cập nhật lastReadMessage
+      await ConversationMember.findOneAndUpdate(
+        {
+          conversation: conversationId,
+          user: currentUser._id,
+        },
+        { lastReadMessage: lastMessage._id }
+      );
+
+      // Emit socket event để cập nhật totalUnreadMessages
+      io.to(conversationId).emit("UPDATE_LAST_READ", {
+        userId: currentUser._id,
+        conversationId: conversationId,
+      });
+      console.log("UPDATE_LAST_READ", {
+        userId: currentUser._id,
+        conversationId: conversationId,
+      });
+    }
+
+    return makeSuccessResponse({ res, message: "Last read message updated" });
+  } catch (error) {
+    return makeErrorResponse({ res, message: error.message });
+  }
+};
+
 const updateConversationPermission = async (req, res) => {
   try {
     const { id, canMessage, canUpdate, canAddMember } = req.body;
@@ -290,5 +337,6 @@ export {
   deleteConversation,
   getConversation,
   getConversations,
+  updateLastReadMessage,
   updateConversationPermission,
 };
