@@ -7,7 +7,7 @@ import {
 } from "../utils/vectorSearch.js";
 import { saveMessage, saveMemory } from "../utils/vectorSearch.js";
 import ChatbotConversation from "../models/chatbotConversationModel.js";
-import DocumentModel from "../models/documentChatBotModel.js";
+import DocumentModel from "../models/chatbotDocument.js";
 import ChatbotSuggestion from "../models/chatbotSuggestionModel.js";
 import auth from "../middlewares/authentication.js";
 import { getChatbotStats } from "../controllers/chatbotController.js";

@@ -108,6 +108,7 @@ const embeddings = new HuggingFaceTransformersEmbeddings({
   dtype: "fp32",
 });
 
+// Tìm kiếm tài liệu tương tự dựa trên câu hỏi
 async function searchSimilarDocuments(query, parentRunId) {
   const collection = client
     .db(process.env.DB_NAME)
@@ -258,12 +259,7 @@ async function saveMemory(userId, conversationId, content) {
   });
 }
 
-// Lấy lịch sử trò chuyện
-async function getConversationHistory(userId) {
-  const conversation = await ChatbotConversation.findOne({ userId });
-  return conversation ? conversation.messages : [];
-}
-
+// Hàm chính để lấy câu trả lời từ tài liệu và ký ức
 async function getAnswerFromDocuments(question, userId, conversationId, res) {
   let parentRun = null;
   if (isTracingEnabled) {

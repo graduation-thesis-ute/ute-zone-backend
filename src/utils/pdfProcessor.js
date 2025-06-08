@@ -3,7 +3,7 @@ import "dotenv/config.js";
 import { RecursiveCharacterTextSplitter } from "langchain/text_splitter";
 import { HuggingFaceTransformersEmbeddings } from "@langchain/community/embeddings/huggingface_transformers";
 import { MongoClient } from "mongodb";
-import DocumentModel from "../models/documentChatBotModel.js";
+import DocumentModel from "../models/chatbotDocument.js";
 
 const client = new MongoClient(process.env.MONGODB_URI);
 const embeddings = new HuggingFaceTransformersEmbeddings({
@@ -31,7 +31,7 @@ async function processPDFAndStoreVector(buffer, filename, title) {
     }
 
     const splitter = new RecursiveCharacterTextSplitter({
-      chunkSize: 1000,
+      chunkSize: 500,
       chunkOverlap: 150,
     });
     const docs = await splitter.createDocuments([text]);

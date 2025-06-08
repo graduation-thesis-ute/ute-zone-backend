@@ -182,7 +182,11 @@ const registerUser = async (req, res) => {
       });
     }
     if (errors.length > 0) {
-      return makeErrorResponse({ res, data: errors, message: "Invalid form" });
+      return makeErrorResponse({
+        res,
+        data: errors,
+        message: "Thông tin không hợp lệ",
+      });
     }
     if (await User.findOne({ studentId })) {
       return makeErrorResponse({
