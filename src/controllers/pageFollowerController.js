@@ -82,40 +82,103 @@ const getPageFollowersOfCurrentUser = async (req, res) => {
 const getSuggestedPages = async (req, res) => {
     try {
         const currentUser = req.user;
-        const { page = 0, size = 10 } = req.query;
-        const offset = parseInt(page, 10) * parseInt(size, 10);
-        const limit = parseInt(size, 10);
+        const pageSize = 10;
 
-        // Lấy danh sách các trang mà user đã follow
-        const followedPages = await PageFollower.find({ user: currentUser._id })
-            .select('page')
-            .lean();
-        const followedPageIds = followedPages.map(fp => fp.page);
+        // Use aggregation to get suggested pages
+        const suggestedPages = await Page.aggregate([
+            // Match active community pages
+            {
+                $match: {
+                    status: 1,
+                    kind: 1
+                }
+            },
+            // Lookup to check if user is following
+            {
+                $lookup: {
+                    from: 'pagefollowers',
+                    let: { pageId: '$_id' },
+                    pipeline: [
+                        {
+                            $match: {
+                                $expr: {
+                                    $and: [
+                                        { $eq: ['$page', '$$pageId'] },
+                                        { $eq: ['$user', currentUser._id] }
+                                    ]
+                                }
+                            }
+                        }
+                    ],
+                    as: 'isFollowing'
+                }
+            },
+            // Lookup to check if user is owner
+            {
+                $lookup: {
+                    from: 'pages',
+                    let: { pageId: '$_id' },
+                    pipeline: [
+                        {
+                            $match: {
+                                $expr: {
+                                    $and: [
+                                        { $eq: ['$_id', '$$pageId'] },
+                                        { $eq: ['$user', currentUser._id] },
+                                        { $eq: ['$isOwner', 1] }
+                                    ]
+                                }
+                            }
+                        }
+                    ],
+                    as: 'isOwner'
+                }
+            },
+            // Only include pages that user is not following and not owner
+            {
+                $match: {
+                    $and: [
+                        { isFollowing: { $size: 0 } }, // Not following
+                        { isOwner: { $size: 0 } }      // Not owner
+                    ]
+                }
+            },
+            // Project only needed fields
+            {
+                $project: {
+                    _id: 1,
+                    name: 1,
+                    description: 1,
+                    avatarUrl: 1,
+                    coverUrl: 1,
+                    category: 1,
+                    totalFollowers: 1
+                }
+            },
+            // Sort by total followers
+            {
+                $sort: { totalFollowers: -1 }
+            },
+            // Get total count
+            {
+                $facet: {
+                    metadata: [{ $count: 'total' }],
+                    data: [{ $limit: pageSize }]
+                }
+            }
+        ]);
 
-        // Lấy danh sách các trang gợi ý (chưa follow)
-        const suggestedPages = await Page.find({
-            _id: { $nin: followedPageIds },
-            isDeleted: { $ne: true }
-        })
-        .select('name description avatarUrl totalFollowers category')
-        .sort({ totalFollowers: -1 }) // Sắp xếp theo số người follow giảm dần
-        .skip(offset)
-        .limit(limit);
-
-        // Lấy tổng số trang gợi ý
-        const totalElements = await Page.countDocuments({
-            _id: { $nin: followedPageIds },
-            isDeleted: { $ne: true }
-        });
-
-        const totalPages = Math.ceil(totalElements / limit);
+        const totalElements = suggestedPages[0].metadata[0]?.total || 0;
+        const totalPages = Math.ceil(totalElements / pageSize);
 
         return makeSuccessResponse({
             res,
             data: {
-                content: suggestedPages,
+                content: suggestedPages[0].data,
+                totalElements,
                 totalPages,
-                totalElements
+                size: pageSize,
+                number: 0
             }
         });
     } catch (error) {
