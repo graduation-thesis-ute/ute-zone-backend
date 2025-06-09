@@ -4,20 +4,30 @@ import ChatbotTopQuestion from "../models/chatbotTopQuestionModel.js";
 import ProcessedRun from "../models/processedRunModel.js";
 import "dotenv/config.js";
 
+// Khởi tạo LangSmith client để theo dõi và phân tích các cuộc hội thoại
 const langsmithClient = new Client({
   apiUrl: process.env.LANGSMITH_ENDPOINT,
   apiKey: process.env.LANGSMITH_API_KEY,
 });
 
+// Khởi tạo model embedding để tính toán độ tương đồng giữa các câu hỏi
 const embeddings = new HuggingFaceTransformersEmbeddings({
   modelName: "Xenova/all-mpnet-base-v2",
 });
 
+/**
+ * Lấy thống kê về hoạt động của chatbot trong một khoảng thời gian
+ * @param {Object} req - Request object chứa các tham số truy vấn
+ * @param {string} req.query.startDate - Ngày bắt đầu (YYYY-MM-DD)
+ * @param {string} req.query.endDate - Ngày kết thúc (YYYY-MM-DD)
+ * @param {string} req.query.groupBy - Cách nhóm dữ liệu (mặc định: 'day')
+ * @param {Object} res - Response object
+ */
 const getChatbotStats = async (req, res) => {
   try {
     const { startDate, endDate, groupBy = "day" } = req.query;
 
-    // Kiểm tra đầu vào
+    // Kiểm tra và xác thực tham số đầu vào
     if (!startDate || !endDate) {
       return res.status(400).json({
         result: false,
@@ -28,7 +38,7 @@ const getChatbotStats = async (req, res) => {
 
     const startTime = new Date(startDate);
     const endTime = new Date(endDate);
-    endTime.setHours(23, 59, 59, 999); // Set to end of the day
+    endTime.setHours(23, 59, 59, 999); // Đặt thời gian kết thúc là cuối ngày
 
     if (isNaN(startTime.getTime()) || isNaN(endTime.getTime())) {
       return res.status(400).json({
@@ -49,7 +59,7 @@ const getChatbotStats = async (req, res) => {
     console.log("Tham số truy vấn:", { startDate, endDate, groupBy });
     console.log("Đối tượng ngày:", { startTime, endTime });
 
-    // Lấy danh sách projects
+    // Lấy danh sách projects từ LangSmith
     const projects = [];
     for await (const project of langsmithClient.listProjects()) {
       projects.push(project);
@@ -59,23 +69,22 @@ const getChatbotStats = async (req, res) => {
       projects.map((p) => ({ id: p.id, name: p.name }))
     );
 
-    // Lấy danh sách runs đã xử lý
+    // Lấy danh sách các run đã được xử lý từ database
     const processedRuns = await ProcessedRun.find().select("runId");
     const processedRunIds = new Set(processedRuns.map((run) => run.runId));
 
-    // Lấy runs từ LangSmith (chỉ định project 'utezone')
-    const runs = [];
-    const openAIRuns = []; // Array to store OpenAI runs
-    const allRuns = []; // Array to store all runs for statistics
+    // Khởi tạo các mảng để lưu trữ dữ liệu
+    const runs = []; // Lưu các run từ project utezone
+    const openAIRuns = []; // Lưu các run từ OpenAI
+    const allRuns = []; // Lưu tất cả các run để tính thống kê
 
-    // Fetch runs from utezone project for conversation data
+    // Lấy runs từ project utezone cho dữ liệu hội thoại
     for await (const run of langsmithClient.listRuns({
       projectName: "utezone",
       startTime,
       endTime,
       runTypes: ["chain", "llm"],
     })) {
-      // Kiểm tra cả start_time và end_time có nằm trong khoảng thời gian không
       const runStartTime = new Date(run.start_time);
       const runEndTime = run.end_time ? new Date(run.end_time) : null;
 
@@ -90,17 +99,15 @@ const getChatbotStats = async (req, res) => {
           "end_time:",
           run.end_time
         );
-        // Lưu tất cả runs để tính thống kê
         allRuns.push(run);
 
-        // Chỉ thêm runs chưa được xử lý vào mảng xử lý
         if (!processedRunIds.has(run.id)) {
           runs.push(run);
         }
       }
     }
 
-    // Fetch runs from default project for OpenAI response times
+    // Lấy runs từ project mặc định cho thời gian phản hồi của OpenAI
     for await (const run of langsmithClient.listRuns({
       projectName: "default",
       startTime,
@@ -108,7 +115,6 @@ const getChatbotStats = async (req, res) => {
       runTypes: ["llm"],
       name: "openai_chat",
     })) {
-      // Kiểm tra cả start_time và end_time có nằm trong khoảng thời gian không
       const runStartTime = new Date(run.start_time);
       const runEndTime = run.end_time ? new Date(run.end_time) : null;
 
@@ -132,6 +138,7 @@ const getChatbotStats = async (req, res) => {
     console.log("Số lượng runs (chỉ chain runs):", runs.length);
     console.log("Số lượng OpenAI runs:", openAIRuns.length);
 
+    // Log thông tin chi tiết của run đầu tiên để debug
     if (runs.length > 0) {
       console.log("Run đầu tiên:", {
         id: runs[0].id,
@@ -157,7 +164,7 @@ const getChatbotStats = async (req, res) => {
       });
     }
 
-    // Khởi tạo thống kê
+    // Khởi tạo đối tượng thống kê
     const stats = {
       totalQueries: 0,
       averageResponseTime: 0,
@@ -170,7 +177,12 @@ const getChatbotStats = async (req, res) => {
     let totalResponseTime = 0;
     let successfulRuns = 0;
 
-    // Hàm cosine similarity
+    /**
+     * Tính toán độ tương đồng cosine giữa hai vector
+     * @param {Array} vecA - Vector thứ nhất
+     * @param {Array} vecB - Vector thứ hai
+     * @returns {number} Độ tương đồng cosine
+     */
     function cosineSimilarity(vecA, vecB) {
       const dot = vecA.reduce((sum, a, i) => sum + a * vecB[i], 0);
       const normA = Math.sqrt(vecA.reduce((sum, a) => sum + a * a, 0));
@@ -190,7 +202,7 @@ const getChatbotStats = async (req, res) => {
       }
     }
 
-    // Gom tất cả câu hỏi từ các run mới
+    // Thu thập tất cả câu hỏi từ các run mới
     const allQuestions = [];
     for (const run of runs) {
       if (run.name === "chatbot_conversation") {
@@ -202,7 +214,7 @@ const getChatbotStats = async (req, res) => {
       }
     }
 
-    // Process each new question and compare with DB entries
+    // Xử lý từng câu hỏi mới và so sánh với các câu hỏi trong database
     for (const { question, runId } of allQuestions) {
       const embedding = await embeddings.embedQuery(question);
       const topQuestionsDB = await ChatbotTopQuestion.find();
@@ -210,7 +222,7 @@ const getChatbotStats = async (req, res) => {
       let found = false;
       for (const q of topQuestionsDB) {
         if (cosineSimilarity(embedding, q.embedding) > 0.85) {
-          // Update count for existing question
+          // Cập nhật số lần xuất hiện cho câu hỏi đã tồn tại
           await ChatbotTopQuestion.updateOne(
             { _id: q._id },
             { $inc: { count: 1 }, $set: { lastUpdated: new Date() } }
@@ -221,7 +233,7 @@ const getChatbotStats = async (req, res) => {
       }
 
       if (!found) {
-        // Add new question to DB
+        // Thêm câu hỏi mới vào database
         await ChatbotTopQuestion.create({
           question: question,
           embedding: embedding,
@@ -230,22 +242,25 @@ const getChatbotStats = async (req, res) => {
         });
       }
 
-      // Đánh dấu run đã được xử lý
-      await ProcessedRun.create({
-        runId: runId,
-        processedAt: new Date(),
-      });
+      // Đánh dấu run đã được xử lý (thêm kiểm tra trước khi tạo)
+      const existingProcessedRun = await ProcessedRun.findOne({ runId });
+      if (!existingProcessedRun) {
+        await ProcessedRun.create({
+          runId: runId,
+          processedAt: new Date(),
+        });
+      }
     }
 
-    // Lấy top 10 câu hỏi phổ biến nhất từ DB (bỏ trường embedding)
+    // Lấy top 10 câu hỏi phổ biến nhất từ database
     const topQuestions = await ChatbotTopQuestion.find()
       .sort({ count: -1, lastUpdated: -1 })
       .limit(10)
       .select("question count -_id");
     stats.topQuestions = topQuestions;
 
-    // Process OpenAI runs for response time data
-    const dailyResponseTimes = new Map(); // Map to store response times for each day
+    // Xử lý các run OpenAI để lấy dữ liệu thời gian phản hồi
+    const dailyResponseTimes = new Map();
 
     for (const run of openAIRuns) {
       if (run.end_time && run.start_time) {
@@ -253,8 +268,7 @@ const getChatbotStats = async (req, res) => {
           (new Date(run.end_time) - new Date(run.start_time)) / 1000;
         totalResponseTime += responseTime;
 
-        // Convert to local date string to ensure correct date handling
-        const date = new Date(run.start_time).toLocaleDateString("en-CA"); // Format: YYYY-MM-DD
+        const date = new Date(run.start_time).toLocaleDateString("en-CA");
 
         if (!dailyResponseTimes.has(date)) {
           dailyResponseTimes.set(date, {
@@ -268,7 +282,7 @@ const getChatbotStats = async (req, res) => {
       }
     }
 
-    // Tính toán thống kê cuối cùng
+    // Tính toán các chỉ số thống kê cuối cùng
     stats.averageResponseTime =
       openAIRuns.length > 0 ? totalResponseTime / openAIRuns.length : 0;
     stats.successRate =
@@ -279,11 +293,11 @@ const getChatbotStats = async (req, res) => {
     const allDates = [];
     const currentDate = new Date(startTime);
     while (currentDate <= endTime) {
-      allDates.push(currentDate.toLocaleDateString("en-CA")); // Format: YYYY-MM-DD
+      allDates.push(currentDate.toLocaleDateString("en-CA"));
       currentDate.setDate(currentDate.getDate() + 1);
     }
 
-    // Đếm số lượng queries cho mỗi ngày từ runs có name là chatbot_conversation
+    // Đếm số lượng truy vấn cho mỗi ngày
     const dailyQueries = new Map();
     for (const run of allRuns) {
       if (run.name === "chatbot_conversation") {
@@ -292,7 +306,7 @@ const getChatbotStats = async (req, res) => {
       }
     }
 
-    // Chuyển đổi Map thành Array và thêm các ngày không có dữ liệu
+    // Tạo dữ liệu chuỗi thời gian
     stats.timeSeriesData = allDates.map((date) => {
       const responseTimeData = dailyResponseTimes.get(date);
       return {
@@ -304,9 +318,9 @@ const getChatbotStats = async (req, res) => {
       };
     });
 
-    // Log the final time series data
     console.log("Final time series data:", stats.timeSeriesData);
 
+    // Log dữ liệu thống kê cuối cùng
     console.log("Dữ liệu phản hồi cuối cùng:", {
       totalQueries: stats.totalQueries,
       averageResponseTime: stats.averageResponseTime,
@@ -317,6 +331,7 @@ const getChatbotStats = async (req, res) => {
       openAIRunsCount: openAIRuns.length,
     });
 
+    // Trả về kết quả
     res.json({
       result: true,
       data: stats,
