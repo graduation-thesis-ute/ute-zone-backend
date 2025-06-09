@@ -7,7 +7,10 @@ import { Client } from "langsmith";
 import ChatbotMemory from "../models/chatbotMemoryModel.js";
 import ChatbotConversation from "../models/chatbotConversationModel.js";
 
+// Khởi tạo kết nối MongoDB
 const client = new MongoClient(process.env.MONGODB_URI);
+
+// Cấu hình LangSmith tracing
 const isTracingEnabled = process.env.LANGSMITH_TRACING === "true";
 const langsmithClient = isTracingEnabled
   ? new Client({
@@ -19,6 +22,7 @@ const langsmithClient = isTracingEnabled
 // Cache để tránh duplicate runs
 const runCache = new Map();
 
+// Khởi tạo model GPT-4
 const model = new ChatOpenAI({
   model: "gpt-4o-mini",
   openAIApiKey: process.env.OPENAI_API_KEY,
@@ -103,12 +107,18 @@ const model = new ChatOpenAI({
   }),
 });
 
+// Khởi tạo model embedding tiếng Việt
 const embeddings = new HuggingFaceTransformersEmbeddings({
   modelName: "bkai-foundation-models/vietnamese-bi-encoder",
   dtype: "fp32",
 });
 
-// Tìm kiếm tài liệu tương tự dựa trên câu hỏi
+/**
+ * Tìm kiếm tài liệu tương tự dựa trên câu hỏi
+ * @param {string} query - Câu hỏi cần tìm kiếm
+ * @param {string} parentRunId - ID của run cha (nếu có)
+ * @returns {Array} Danh sách các tài liệu tương tự
+ */
 async function searchSimilarDocuments(query, parentRunId) {
   const collection = client
     .db(process.env.DB_NAME)
@@ -155,7 +165,13 @@ async function searchSimilarDocuments(query, parentRunId) {
   return results;
 }
 
-// Lưu tin nhắn vào ChatbotConversation
+/**
+ * Lưu tin nhắn vào lịch sử hội thoại
+ * @param {string} userId - ID người dùng
+ * @param {string} conversationId - ID cuộc hội thoại
+ * @param {string} question - Câu hỏi của người dùng
+ * @param {string} answer - Câu trả lời của chatbot
+ */
 async function saveMessage(userId, conversationId, question, answer) {
   await ChatbotConversation.updateOne(
     { userId, conversationId },
@@ -174,7 +190,14 @@ async function saveMessage(userId, conversationId, question, answer) {
   );
 }
 
-// Tìm kiếm ký ức tương tự
+/**
+ * Tìm kiếm ký ức tương tự từ lịch sử hội thoại
+ * @param {string} query - Câu hỏi cần tìm kiếm
+ * @param {string} userId - ID người dùng
+ * @param {string} conversationId - ID cuộc hội thoại
+ * @param {string} parentRunId - ID của run cha (nếu có)
+ * @returns {Array} Danh sách các ký ức tương tự
+ */
 async function searchSimilarMemories(
   query,
   userId,
@@ -228,7 +251,11 @@ async function searchSimilarMemories(
   return results;
 }
 
-// Hàm tóm tắt nội dung bằng AI
+/**
+ * Tóm tắt nội dung hội thoại bằng AI
+ * @param {string} content - Nội dung cần tóm tắt
+ * @returns {string} Nội dung đã được tóm tắt
+ */
 async function summarizeContent(content) {
   console.log("Tóm tắt nội dung:", content);
   const systemMessage = new SystemMessage({
@@ -244,9 +271,13 @@ async function summarizeContent(content) {
   return response.content;
 }
 
-// Lưu ký ức vào ChatbotMemory
+/**
+ * Lưu ký ức vào bộ nhớ của chatbot
+ * @param {string} userId - ID người dùng
+ * @param {string} conversationId - ID cuộc hội thoại
+ * @param {string} content - Nội dung cần lưu
+ */
 async function saveMemory(userId, conversationId, content) {
-  // Tóm tắt nội dung trước khi lưu
   const summarizedContent = await summarizeContent(content);
   const embedding = await embeddings.embedQuery(summarizedContent);
 
@@ -259,7 +290,13 @@ async function saveMemory(userId, conversationId, content) {
   });
 }
 
-// Hàm chính để lấy câu trả lời từ tài liệu và ký ức
+/**
+ * Hàm chính để xử lý câu hỏi và trả về câu trả lời
+ * @param {string} question - Câu hỏi của người dùng
+ * @param {string} userId - ID người dùng
+ * @param {string} conversationId - ID cuộc hội thoại
+ * @param {Object} res - Response object để stream kết quả
+ */
 async function getAnswerFromDocuments(question, userId, conversationId, res) {
   let parentRun = null;
   if (isTracingEnabled) {
@@ -284,6 +321,7 @@ async function getAnswerFromDocuments(question, userId, conversationId, res) {
     console.log("ID cuộc trò chuyện get in vectorSearch:", conversationId);
     console.log("Câu hỏi:", question);
 
+    // Tìm kiếm tài liệu và ký ức tương tự
     const documents = await searchSimilarDocuments(question, parentRun?.id);
     console.log("Tài liệu tìm được:", documents);
 
@@ -295,6 +333,7 @@ async function getAnswerFromDocuments(question, userId, conversationId, res) {
     );
     console.log("Ký ức tìm được:", memories);
 
+    // Kết hợp context từ tài liệu và ký ức
     let context = [
       ...memories.map((mem) => mem.content),
       ...documents.map((doc) => doc.content),
@@ -303,30 +342,27 @@ async function getAnswerFromDocuments(question, userId, conversationId, res) {
       context = context.slice(0, 1500);
     }
 
+    // Tạo prompt cho model
     const systemMessage = new SystemMessage({
-      content: `Bạn là một trợ lý ảo thân thiện và thông minh, được thiết kế để trả lời các câu hỏi liên quan đến Trường Đại học Sư phạm Kỹ thuật TP.HCM (HCMUTE).
-
-Khi người dùng đặt câu hỏi liên quan đến HCMUTE (chẳng hạn như các khoa, ngành học, tuyển sinh, học phí, địa chỉ, hoạt động sinh viên…), bạn phải ưu tiên sử dụng thông tin từ tài liệu đã cung cấp (RAG) để đưa ra câu trả lời chính xác và đáng tin cậy.
-
-Nếu không tìm thấy câu trả lời trong tài liệu, hãy trả lời dựa trên kiến thức tổng quát hoặc nói rõ là bạn không chắc chắn, tránh suy đoán.
-
-Nếu người dùng đặt câu hỏi không liên quan đến HCMUTE, bạn vẫn có thể trả lời dựa trên khả năng hiểu biết chung của bạn, miễn là câu hỏi không vi phạm chính sách hoặc đạo đức.
-
-Luôn trả lời một cách lịch sự, ngắn gọn nhưng đầy đủ ý, dễ hiểu và phù hợp với ngữ cảnh của sinh viên hoặc người quan tâm đến HCMUTE.
-
-Nếu câu hỏi mơ hồ, hãy khuyến khích người dùng làm rõ. Nếu được yêu cầu trích dẫn nguồn, hãy ghi chú rõ nếu thông tin đến từ tài liệu hoặc từ hiểu biết tổng quát.`,
+      content: `Bạn là một trợ lý ảo thân thiện, chuyên trả lời các câu hỏi về Trường Đại học Sư phạm Kỹ thuật TP.HCM (HCMUTE).
+    
+    Luôn ưu tiên dùng thông tin từ tài liệu cung cấp để trả lời. Nếu không có thông tin, bạn có thể trả lời bằng kiến thức tổng quát và nêu rõ điều đó.
+    
+    Không bịa đặt thông tin. Trả lời ngắn gọn, rõ ràng, dễ hiểu và phù hợp với sinh viên. Nếu câu hỏi không rõ, hãy yêu cầu người dùng làm rõ.`,
     });
 
     const humanMessage = new HumanMessage({
       content: `Câu hỏi: ${question}\n\nContext: ${context}`,
     });
 
+    // Cấu hình response stream
     res.setHeader("Content-Type", "text/event-stream");
     res.setHeader("Cache-Control", "no-cache");
     res.setHeader("Connection", "keep-alive");
 
     let fullResponse = "";
 
+    // Stream response từ model
     const stream = await model.stream([systemMessage, humanMessage], {
       tags: [`user_${userId}`, `conversation_${conversationId}`],
       metadata: parentRun
@@ -343,9 +379,10 @@ Nếu câu hỏi mơ hồ, hãy khuyến khích người dùng làm rõ. Nếu �
       res.write(`data: ${JSON.stringify({ token })}\n\n`);
     }
 
+    // Lưu tin nhắn và ký ức
     await saveMessage(userId, conversationId, question, fullResponse);
 
-    if (fullResponse.length > 50) {
+    if (fullResponse.length > 20) {
       await saveMemory(
         userId,
         conversationId,
@@ -353,6 +390,7 @@ Nếu câu hỏi mơ hồ, hãy khuyến khích người dùng làm rõ. Nếu �
       );
     }
 
+    // Cập nhật thông tin cho LangSmith
     if (parentRun) {
       try {
         await langsmithClient.updateRun(parentRun.id, {
