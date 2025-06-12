@@ -293,12 +293,12 @@ const changeStatusPost = async (req, res) => {
     if (!post) {
       return makeErrorResponse({ res, message: "Post not found" });
     }
-    if (post.status !== 1) {
-      return makeErrorResponse({
-        res,
-        message: "Not allowed to change this post status",
-      });
-    }
+    // if (post.status !== 1) {
+    //   return makeErrorResponse({
+    //     res,
+    //     message: "Not allowed to change this post status",
+    //   });
+    // }
     if (!status || ![2, 3].includes(status)) {
       return makeErrorResponse({
         res,
