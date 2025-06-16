@@ -87,7 +87,7 @@ const updateGroup = async (req, res) => {
 
 const deleteGroup = async (req, res) => {
   try {
-    const { id } = req.body;
+    const { id } = req.params;
     const currentUser = req.user;
     if (!isValidObjectId(id)) {
       return makeErrorResponse({res, message: "Invalid id"});
@@ -99,8 +99,8 @@ const deleteGroup = async (req, res) => {
     if (!group.owner.equals(currentUser._id)) {
       return makeErrorResponse({res, message: "You are not the owner of this group"});
     }
-    await Group.findByIdAndDelete(id);
-    return makeSuccessResponse({res, message: "Group deleted successfully"});
+    await group.updateOne({ status: 1 });
+    return makeSuccessResponse({res, message: "Group status updated successfully"});
   } catch (error) {
     return makeErrorResponse({res, message: error.message});
   }
