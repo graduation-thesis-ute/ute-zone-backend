@@ -4,8 +4,9 @@ import { processPDFAndStoreVector } from "../utils/pdfProcessor.js";
 import {
   searchSimilarDocuments,
   getAnswerFromDocuments,
-} from "../utils/vectorSearch.js";
-import { saveMessage, saveMemory } from "../utils/vectorSearch.js";
+  saveMessage,
+  saveMemory,
+} from "../controllers/chatbotController.js";
 import ChatbotConversation from "../models/chatbotConversationModel.js";
 import DocumentModel from "../models/chatbotDocument.js";
 import ChatbotSuggestion from "../models/chatbotSuggestionModel.js";
@@ -129,16 +130,16 @@ router.delete("/documents/:id", auth(), async (req, res) => {
   }
 });
 
-router.post("/search", async (req, res) => {
-  try {
-    const { question } = req.body;
-    const docs = await searchSimilarDocuments(question);
-    res.json({ results: docs });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: "Search failed" });
-  }
-});
+// router.post("/search", async (req, res) => {
+//   try {
+//     const { question } = req.body;
+//     const docs = await searchSimilarDocuments(question);
+//     res.json({ results: docs });
+//   } catch (err) {
+//     console.error(err);
+//     res.status(500).json({ error: "Search failed" });
+//   }
+// });
 
 // router.post("/chat", async (req, res) => {
 //   try {
