@@ -179,6 +179,11 @@ async function searchSimilarDocuments(query, parentRunId) {
           score: { $meta: "vectorSearchScore" },
         },
       },
+      {
+        $match: {
+          score: { $gte: 0.7 },
+        },
+      },
     ])
     .toArray();
 
@@ -268,6 +273,11 @@ async function searchSimilarMemories(
         $project: {
           content: 1,
           score: { $meta: "vectorSearchScore" },
+        },
+      },
+      {
+        $match: {
+          score: { $gte: 0.7 },
         },
       },
     ])
