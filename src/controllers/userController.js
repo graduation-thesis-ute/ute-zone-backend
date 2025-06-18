@@ -402,6 +402,14 @@ const updateUserProfile = async (req, res) => {
       birthDate: parsedBirthDate,
     };
     if (currentPassword && newPassword) {
+      // Kiểm tra user có password không
+      if (!user.password) {
+        return makeErrorResponse({
+          res,
+          message:
+            "Tài khoản này chỉ có thể đăng nhập bằng Google. Vui lòng sử dụng tính năng 'Quên mật khẩu' để tạo mật khẩu mới.",
+        });
+      }
       const isPasswordValid = await comparePassword(
         currentPassword,
         user.password
