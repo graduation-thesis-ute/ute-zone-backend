@@ -9,6 +9,7 @@ import { decrypt, encrypt } from "../utils/utils.js";
 import { secretKey } from "../static/constant.js";
 import { io } from "../index.js";
 import { formatUserData } from "./userService.js";
+import Notification from "../models/notificationModel.js";
 
 const formatMessageData = async (message, currentUser) => {
   const userKey = currentUser.secretKey;
@@ -162,7 +163,41 @@ const createMessage = async (
   );
   io.to(getConversation._id.toString()).emit("CREATE_MESSAGE", message._id);
   console.log("CREATE_MESSAGE event emitted (socket):", message._id);
-  const members = await ConversationMember.find({
+
+  // Lấy tất cả thành viên trong cuộc trò chuyện (trừ người gửi)
+  const conversationMembers = await ConversationMember.find({
+    conversation: getConversation._id,
+    user: { $ne: currentUser._id },
+  }).populate({
+    path: "user",
+    populate: {
+      path: "role",
+    },
+  });
+
+  // Tạo thông báo cho tất cả thành viên khác
+  if (conversationMembers.length > 0) {
+    await Notification.create(
+      conversationMembers.map((member) => ({
+        user: member.user._id,
+        data: {
+          conversation: {
+            _id: getConversation._id,
+          },
+          message: {
+            _id: message._id,
+          },
+          user: {
+            _id: currentUser._id,
+          },
+        },
+        message: `${currentUser.displayName} đã gửi tin nhắn mới`,
+      }))
+    );
+  }
+
+  // Gửi thông báo real-time cho tất cả thành viên
+  const allMembers = await ConversationMember.find({
     conversation: getConversation._id,
   }).populate({
     path: "user",
@@ -170,8 +205,9 @@ const createMessage = async (
       path: "role",
     },
   });
+
   await Promise.all(
-    members.map(async (member) => {
+    allMembers.map(async (member) => {
       const formattedUserData = await formatUserData(member.user);
       io.to(member.user._id.toString()).emit(
         "NEW_NOTIFICATION",
