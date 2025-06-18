@@ -40,74 +40,110 @@ const createGroupPost = async (req, res) => {
         let status = 1; // Mặc định là pending
         let message = "Bài viết đã được tạo và đang chờ duyệt";
 
-        // Kiểm tra nội dung nếu bật duyệt tự động
-        if (moderationSetting?.isModerationRequired && moderationSetting.isAutoModerationEnabled) {
-            try {
-                const moderationResult = await moderatePostContent({
+        // LUÔN kiểm tra nội dung nhạy cảm để phát hiện từ ngữ không phù hợp
+        let moderationResult = null;
+        let hasSensitiveContent = false;
+
+        try {
+            moderationResult = await moderatePostContent({
+                content,
+                imageUrls: imageUrls || []
+            });
+
+            // Ghi nhận nếu có nội dung nhạy cảm
+            if (!moderationResult.isSafe) {
+                hasSensitiveContent = true;
+                console.log('Content flagged by moderation:', {
                     content,
-                    imageUrls: imageUrls || []
+                    flaggedCategories: moderationResult.flaggedCategories,
+                    confidence: moderationResult.confidence
+                });
+            }
+        } catch (error) {
+            // Nếu có lỗi khi kiểm tra nội dung, chuyển sang chờ duyệt thủ công
+            console.error("Error during content moderation:", error.message);
+            status = 1; // Pending
+            message = "Bài viết đã được tạo và đang chờ duyệt (hệ thống kiểm tra nội dung tạm thời không khả dụng)";
+        }
+
+        // Xử lý kết quả kiểm tra nội dung
+        if (hasSensitiveContent) {
+            // Nếu bật tự động duyệt và có nội dung nhạy cảm -> từ chối
+            if (moderationSetting?.isModerationRequired && moderationSetting.isAutoModerationEnabled) {
+                // Tạo bài viết với trạng thái rejected (3)
+                const post = await GroupPost.create({
+                    group: groupId,
+                    user: user._id,
+                    content,
+                    imageUrls: imageUrls?.map((url) => (isValidUrl(url) ? url : null)).filter(Boolean) || [],
+                    status: 3, // Rejected
+                    moderationNote: "Nội dung vi phạm quy định",
+                    flaggedCategories: moderationResult.flaggedCategories,
+                    moderationDetails: {
+                        textAnalysis: moderationResult.textAnalysis,
+                        imageAnalysis: moderationResult.imageAnalysis,
+                        confidence: moderationResult.confidence
+                    }
                 });
 
-                if (!moderationResult.isSafe) {
-                    console.log('Content flagged by moderation:', {
-                        content,
-                        flaggedCategories: moderationResult.flaggedCategories,
-                        confidence: moderationResult.confidence
-                    });
-
-                    // Tạo bài viết với trạng thái rejected (3)
-                    const post = await GroupPost.create({
-                        group: groupId,
-                        user: user._id,
-                        content,
-                        imageUrls: imageUrls?.map((url) => (isValidUrl(url) ? url : null)).filter(Boolean) || [],
-                        status: 3, // Rejected
-                        moderationNote: "Nội dung vi phạm quy định",
+                return makeSuccessResponse({ 
+                    res, 
+                    message: "Bài viết đã được tạo nhưng bị từ chối do vi phạm quy định",
+                    data: {
+                        status: post.status,
                         flaggedCategories: moderationResult.flaggedCategories,
                         moderationDetails: {
                             textAnalysis: moderationResult.textAnalysis,
-                            imageAnalysis: moderationResult.imageAnalysis,
-                            confidence: moderationResult.confidence
+                            imageAnalysis: moderationResult.imageAnalysis
                         }
-                    });
-
-                    return makeSuccessResponse({ 
-                        res, 
-                        message: "Bài viết đã được tạo nhưng bị từ chối do vi phạm quy định",
-                        data: {
-                            status: post.status,
-                            flaggedCategories: moderationResult.flaggedCategories,
-                            moderationDetails: {
-                                textAnalysis: moderationResult.textAnalysis,
-                                imageAnalysis: moderationResult.imageAnalysis
-                            }
-                        }
-                    });
-                }
-                // Nếu nội dung an toàn và bật duyệt tự động
-                status = 2; // Approved
-                message = "Bài viết đã được tạo và tự động duyệt thành công";
-            } catch (error) {
-                // Nếu có lỗi khi kiểm tra nội dung, chuyển sang chờ duyệt thủ công
-                console.error("Error during content moderation:", error.message);
-                status = 1; // Pending
-                message = "Bài viết đã được tạo và đang chờ duyệt (hệ thống kiểm tra nội dung tạm thời không khả dụng)";
+                    }
+                });
+            } else {
+                // Nếu tắt tự động duyệt hoặc tắt moderation -> chờ duyệt thủ công
+                status = 1; // Pending - chờ duyệt thủ công
+                message = "Bài viết đã được tạo và đang chờ duyệt (phát hiện nội dung có thể nhạy cảm)";
             }
-        } else if (!moderationSetting?.isModerationRequired) {
-            // Nếu không yêu cầu duyệt bài
-            status = 2; // Approved
-            message = "Bài viết đã được tạo thành công";
+        } else {
+            // Nếu nội dung an toàn
+            if (moderationSetting?.isModerationRequired) {
+                // Nếu bật tự động duyệt và nội dung an toàn
+                if (moderationSetting.isAutoModerationEnabled) {
+                    status = 2; // Approved
+                    message = "Bài viết đã được tạo và tự động duyệt thành công";
+                } else {
+                    status = 1; // Pending
+                    message = "Bài viết đã được tạo và đang chờ duyệt";
+                }
+            } else {
+                // Nếu không yêu cầu duyệt bài
+                status = 2; // Approved
+                message = "Bài viết đã được tạo thành công";
+            }
         }
 
         const validImageUrls = imageUrls?.map((url) => (isValidUrl(url) ? url : null)).filter(Boolean) || [];
 
-        const post = await GroupPost.create({
+        // Chuẩn bị dữ liệu tạo bài viết
+        const postData = {
             group: groupId,
             user: user._id,
             content,
             imageUrls: validImageUrls,
             status
-        });
+        };
+
+        // Thêm thông tin moderation nếu có nội dung nhạy cảm
+        if (hasSensitiveContent && moderationResult) {
+            postData.moderationNote = "Nội dung có thể nhạy cảm, cần duyệt thủ công";
+            postData.flaggedCategories = moderationResult.flaggedCategories;
+            postData.moderationDetails = {
+                textAnalysis: moderationResult.textAnalysis,
+                imageAnalysis: moderationResult.imageAnalysis,
+                confidence: moderationResult.confidence
+            };
+        }
+
+        const post = await GroupPost.create(postData);
 
         return makeSuccessResponse({ 
             res, 
