@@ -47,18 +47,32 @@ const createPost = async (req, res) => {
       });
     }
 
-    // Kiểm tra nội dung
-    let moderationResult;
+    // Lấy cài đặt duyệt nội dung toàn cục
+    const globalSetting = await ModerationSetting.findOne({ entityType: 1 }); // 1 = global setting
+    
+    // LUÔN kiểm tra nội dung nhạy cảm để phát hiện từ ngữ không phù hợp
+    let moderationResult = null;
+    let hasSensitiveContent = false;
+    
     try {
       moderationResult = await moderatePostContent({ content, imageUrls });
       // Log kết quả kiểm duyệt chi tiết
       console.log('Moderation result:', JSON.stringify(moderationResult, null, 2));
+      
+      // Ghi nhận nếu có nội dung nhạy cảm
+      if (!moderationResult.isSafe) {
+        hasSensitiveContent = true;
+        console.log('Content flagged by moderation:', {
+          content,
+          flaggedCategories: moderationResult.flaggedCategories,
+          confidence: moderationResult.confidence,
+          rawResponse: moderationResult.rawResponse
+        });
+      }
     } catch (error) {
       // Xử lý lỗi quota OpenAI
       if (error.message.includes('429') || error.message.includes('quota')) {
         console.log('OpenAI API quota exceeded, falling back to manual moderation');
-        // Lấy cài đặt duyệt nội dung toàn cục
-        const globalSetting = await ModerationSetting.findOne({ entityType: 1 }); // 1 = global setting
         
         let post;
         let message;
@@ -127,83 +141,135 @@ const createPost = async (req, res) => {
       throw error;
     }
 
-    // Nếu nội dung không an toàn
-    if (!moderationResult.isSafe) {
-      console.log('Content flagged by moderation:', {
-        content,
-        flaggedCategories: moderationResult.flaggedCategories,
-        confidence: moderationResult.confidence,
-        rawResponse: moderationResult.rawResponse
-      });
-
-      // Tạo bài viết với trạng thái rejected (3)
-      const post = await Post.create({
-        user: userId,
-        content,
-        imageUrls: imageUrls || [],
-        kind,
-        status: 3, // Rejected
-        moderationNote: "Nội dung vi phạm quy định",
-        flaggedCategories: moderationResult.flaggedCategories,
-        moderationDetails: {
-          textAnalysis: moderationResult.textAnalysis,
-          imageAnalysis: moderationResult.imageAnalysis,
-          confidence: moderationResult.confidence
-        }
-      });
-
-      return res.status(201).json({
-        result: true,
-        message: "Bài viết đã được tạo nhưng bị từ chối do vi phạm quy định",
-        data: {
-          status: post.status,
-          flaggedCategories: moderationResult.flaggedCategories,
-          moderationDetails: {
-            textAnalysis: moderationResult.textAnalysis,
-            imageAnalysis: moderationResult.imageAnalysis
-          }
-        }
-      });
-    }
-
-    // Lấy cài đặt duyệt nội dung toàn cục
-    const globalSetting = await ModerationSetting.findOne({ entityType: 1 }); // 1 = global setting
-    
+    // Xử lý kết quả kiểm tra nội dung
     let post;
     let message;
 
-    // Nếu không có cài đặt hoặc yêu cầu duyệt
-    if (!globalSetting || globalSetting.isModerationRequired) {
-      // Nếu bật tự động duyệt và nội dung an toàn
-      if (globalSetting?.isAutoModerationEnabled) {
+    // Nếu có nội dung nhạy cảm
+    if (hasSensitiveContent) {
+      // Nếu bật tự động duyệt và có nội dung nhạy cảm -> từ chối
+      if (globalSetting?.isModerationRequired && globalSetting.isAutoModerationEnabled) {
         post = await Post.create({
           user: userId,
           content,
           imageUrls: imageUrls || [],
           kind,
-          status: 2, // Approved
+          status: 3, // Rejected
+          moderationNote: "Nội dung vi phạm quy định",
+          flaggedCategories: moderationResult.flaggedCategories,
+          moderationDetails: {
+            textAnalysis: moderationResult.textAnalysis,
+            imageAnalysis: moderationResult.imageAnalysis,
+            confidence: moderationResult.confidence
+          }
         });
-        message = "Bài viết đã được tạo và tự động duyệt thành công";
+
+        return res.status(201).json({
+          result: true,
+          message: "Bài viết đã được tạo nhưng bị từ chối do vi phạm quy định",
+          data: {
+            status: post.status,
+            flaggedCategories: moderationResult.flaggedCategories,
+            moderationDetails: {
+              textAnalysis: moderationResult.textAnalysis,
+              imageAnalysis: moderationResult.imageAnalysis
+            }
+          }
+        });
       } else {
+        // Nếu tắt tự động duyệt hoặc tắt moderation -> chờ duyệt thủ công
         post = await Post.create({
           user: userId,
           content,
           imageUrls: imageUrls || [],
           kind,
-          status: 1, // Pending
+          status: 1, // Pending - chờ duyệt thủ công
+          moderationNote: "Nội dung có thể nhạy cảm, cần duyệt thủ công",
+          flaggedCategories: moderationResult.flaggedCategories,
+          moderationDetails: {
+            textAnalysis: moderationResult.textAnalysis,
+            imageAnalysis: moderationResult.imageAnalysis,
+            confidence: moderationResult.confidence
+          }
         });
-        message = "Bài viết đã được tạo và đang chờ duyệt";
+        message = "Bài viết đã được tạo và đang chờ duyệt (phát hiện nội dung có thể nhạy cảm)";
       }
     } else {
-      // Nếu không yêu cầu duyệt
-      post = await Post.create({
-        user: userId,
-        content,
-        imageUrls: imageUrls || [],
-        kind,
-        status: 2, // Approved
-      });
-      message = "Bài viết đã được tạo thành công";
+      // Nếu nội dung an toàn
+      if (!globalSetting || globalSetting.isModerationRequired) {
+        // Nếu bật tự động duyệt và nội dung an toàn
+        if (globalSetting?.isAutoModerationEnabled) {
+          // Chuẩn bị dữ liệu tạo bài viết
+          const postData = {
+            user: userId,
+            content,
+            imageUrls: imageUrls || [],
+            kind,
+            status: 2 // Approved
+          };
+
+          // Thêm thông tin moderation nếu có nội dung nhạy cảm
+          if (hasSensitiveContent && moderationResult) {
+            postData.moderationNote = "Nội dung có thể nhạy cảm, cần duyệt thủ công";
+            postData.flaggedCategories = moderationResult.flaggedCategories;
+            postData.moderationDetails = {
+              textAnalysis: moderationResult.textAnalysis,
+              imageAnalysis: moderationResult.imageAnalysis,
+              confidence: moderationResult.confidence
+            };
+          }
+
+          post = await Post.create(postData);
+          message = "Bài viết đã được tạo và tự động duyệt thành công";
+        } else {
+          // Chuẩn bị dữ liệu tạo bài viết
+          const postData = {
+            user: userId,
+            content,
+            imageUrls: imageUrls || [],
+            kind,
+            status: 1 // Pending
+          };
+
+          // Thêm thông tin moderation nếu có nội dung nhạy cảm
+          if (hasSensitiveContent && moderationResult) {
+            postData.moderationNote = "Nội dung có thể nhạy cảm, cần duyệt thủ công";
+            postData.flaggedCategories = moderationResult.flaggedCategories;
+            postData.moderationDetails = {
+              textAnalysis: moderationResult.textAnalysis,
+              imageAnalysis: moderationResult.imageAnalysis,
+              confidence: moderationResult.confidence
+            };
+          }
+
+          post = await Post.create(postData);
+          message = "Bài viết đã được tạo và đang chờ duyệt";
+        }
+      } else {
+        // Nếu không yêu cầu duyệt
+        // Chuẩn bị dữ liệu tạo bài viết
+        const postData = {
+          user: userId,
+          content,
+          imageUrls: imageUrls || [],
+          kind,
+          status: 2 // Approved
+        };
+
+        // Thêm thông tin moderation nếu có nội dung nhạy cảm
+        if (hasSensitiveContent && moderationResult) {
+          postData.moderationNote = "Nội dung có thể nhạy cảm, cần duyệt thủ công";
+          postData.flaggedCategories = moderationResult.flaggedCategories;
+          postData.moderationDetails = {
+            textAnalysis: moderationResult.textAnalysis,
+            imageAnalysis: moderationResult.imageAnalysis,
+            confidence: moderationResult.confidence
+          };
+        }
+
+        post = await Post.create(postData);
+        message = "Bài viết đã được tạo thành công";
+      }
     }
 
     // Gửi thông báo cho bạn bè
